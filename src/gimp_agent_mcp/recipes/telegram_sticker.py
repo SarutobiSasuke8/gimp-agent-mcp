@@ -6,7 +6,7 @@ PARAMS = {
     "input_path": {"type": "string", "required": True, "description": "Source image with transparency"},
     "output_path": {"type": "string", "required": True, "description": "Destination .png (or .webp)"},
     "canvas": {"type": "integer", "default": 512, "description": "Output canvas size in px (Telegram: 512)"},
-    "fit": {"type": "integer", "default": 490, "description": "Longest side of the artwork after scaling; leaves room for the stroke"},
+    "fit": {"type": "integer", "default": 470, "description": "Longest side of the artwork after scaling; leaves room for the stroke and shadow spread"},
     "stroke_px": {"type": "integer", "default": 8, "description": "Outline thickness in px; 0 disables"},
     "stroke_color": {"type": "string", "default": "white", "description": "Outline colour"},
     "shadow_offset_y": {"type": "number", "default": 5, "description": "Shadow vertical offset in px"},
