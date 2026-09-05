@@ -1,0 +1,14 @@
+interface:
+  display_name: "GIMP Layered Assets"
+  short_description: "Build editable layered assets and export production versions"
+  default_prompt: "Use $gimp-layered-assets to assemble an editable layered master in GIMP and export a production-ready version."
+
+dependencies:
+  tools:
+    - type: "mcp"
+      value: "gimp"
+      description: "Local GIMP Agent MCP server"
+      transport: "stdio"
+
+policy:
+  allow_implicit_invocation: true

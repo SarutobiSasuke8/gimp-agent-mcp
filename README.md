@@ -34,14 +34,22 @@ git clone https://github.com/SarutobiSasuke8/gimp-agent-mcp.git
 cd gimp-agent-mcp
 uv sync                                # add --extra segmentation for AI cut-outs
 uv run gimp-agent-mcp install-plugin   # copies the bridge plug-in into GIMP's plug-ins folder
+uv run gimp-agent-mcp install-skills   # copies the bundled skills into Claude Code and Codex
 uv run gimp-agent-mcp doctor           # shows what was found
 uv run gimp-agent-mcp smoke            # launches headless GIMP and exercises every tool (24 checks with --segmentation)
 ```
 
-Then add the server to your MCP client. For Claude Code, from the repo directory:
+Then add the server to your MCP client. For Claude Code, the plugin installs the server and the skills together:
 
 ```bash
-claude mcp add gimp -- uv run --directory "$(pwd)" gimp-agent-mcp serve
+/plugin marketplace add SarutobiSasuke8/gimp-agent-mcp
+/plugin install gimp-agent-mcp
+```
+
+Or add the server on its own, from the repo directory:
+
+```bash
+claude mcp add gimp -- uv run --no-sync --directory "$(pwd)" gimp-agent-mcp serve
 ```
 
 Or in `.mcp.json` / `claude_desktop_config.json` (see `.mcp.json.example`):
@@ -51,11 +59,13 @@ Or in `.mcp.json` / `claude_desktop_config.json` (see `.mcp.json.example`):
   "mcpServers": {
     "gimp": {
       "command": "uv",
-      "args": ["run", "--directory", "/absolute/path/to/gimp-agent-mcp", "gimp-agent-mcp", "serve"]
+      "args": ["run", "--no-sync", "--directory", "/absolute/path/to/gimp-agent-mcp", "gimp-agent-mcp", "serve"]
     }
   }
 }
 ```
+
+`--no-sync` matters. Without it `uv` re-syncs the virtualenv on every launch, which fails on Windows with `os error 32` whenever an earlier server process still holds `.venv\Scripts\gimp-agent-mcp.exe`, and the client reports only `CONNECTION_CLOSED`.
 
 ## Working in your own GIMP window
 
@@ -103,6 +113,24 @@ Argument conventions: images and items are integer ids; colours are `"#rrggbb"`,
 `compose` is the template engine: keep a brand manifest (logo path, fonts, colours, positions) and let the agent fill the text slots. `gimp_help("compose")` has a full example.
 
 Recipes live in `src/gimp_agent_mcp/recipes/`. Each is a module with `DESCRIPTION`, `PARAMS` and `SOURCE`; see `docs/RECIPES.md` to add one.
+
+## Skills
+
+Tools tell an agent what it *can* do. Skills tell it how a particular job is done well, and what it may not claim without evidence. Three ship in `skills/`, as client-agnostic `SKILL.md` directories that Claude Code and Codex both read:
+
+| Skill | The job it owns |
+|---|---|
+| `gimp-sprite-sheets` | Pack, slice and verify sprite sheets and atlases. Every crop rectangle measured with `gimp_measure`, and the exported sheet re-measured cell by cell before it is called correct |
+| `gimp-layered-assets` | Component-first layered composition: an XCF master, editable text and effects, delivery formats exported separately |
+| `gimp-batch-jobs` | Recipes across a folder, including reading the per-file result list and spot-checking by measurement rather than by thumbnail |
+
+```bash
+gimp-agent-mcp install-skills                          # every client directory found
+gimp-agent-mcp install-skills --client codex           # ~/.codex/skills
+gimp-agent-mcp install-skills --dir ./.claude/skills   # project scope
+```
+
+Existing skill directories are skipped rather than overwritten. Full details, including the Codex `agents/openai.yaml` descriptors and guidance for writing your own, in [docs/SKILLS.md](docs/SKILLS.md).
 
 ## A detailed-work session, end to end
 

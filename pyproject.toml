@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "gimp-agent-mcp"
-version = "0.2.4"
+version = "0.3.0"
 description = "Windows-first MCP server that gives AI agents the whole of GIMP 3: every PDB procedure, every GEGL filter, a render after each step, and repeatable recipes"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -61,6 +61,11 @@ Changelog = "https://github.com/SarutobiSasuke8/gimp-agent-mcp/blob/main/CHANGEL
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/gimp_agent_mcp"]
+
+# The skills live at the repo root so Claude Code's plugin loader finds them by convention.
+# Ship them inside the wheel too, so `gimp-agent-mcp install-skills` works from a pip install.
+[tool.hatch.build.targets.wheel.force-include]
+"skills" = "gimp_agent_mcp/skills"
 
 [tool.ruff]
 line-length = 110

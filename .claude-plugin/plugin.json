@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
+  "name": "gimp-agent-mcp",
+  "displayName": "GIMP Agent MCP",
+  "description": "The whole of GIMP 3 for AI agents, plus skills for sprite sheets, layered assets and batch image jobs",
+  "version": "0.3.0",
+  "author": {
+    "name": "SarutobiSasuke8",
+    "url": "https://github.com/SarutobiSasuke8"
+  },
+  "homepage": "https://github.com/SarutobiSasuke8/gimp-agent-mcp",
+  "repository": "https://github.com/SarutobiSasuke8/gimp-agent-mcp",
+  "license": "Apache-2.0",
+  "keywords": ["gimp", "image-editing", "sprite-sheet", "game-assets", "mcp", "gegl"],
+  "mcpServers": "./.mcp.json"
+}

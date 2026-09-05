@@ -1,0 +1,14 @@
+interface:
+  display_name: "GIMP Batch Jobs"
+  short_description: "Run tested recipes across a whole folder of images"
+  default_prompt: "Use $gimp-batch-jobs to find a suitable recipe and run it across the folder, checking every per-file result."
+
+dependencies:
+  tools:
+    - type: "mcp"
+      value: "gimp"
+      description: "Local GIMP Agent MCP server"
+      transport: "stdio"
+
+policy:
+  allow_implicit_invocation: true

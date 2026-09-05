@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-09-06
+
+### Added
+
+- **Bundled skills.** Three client-agnostic `SKILL.md` directories in `skills/`, read by both Claude Code and Codex: `gimp-sprite-sheets` (measure, pack and verify sprite sheets and atlases), `gimp-layered-assets` (component-first layered composition with an XCF master), and `gimp-batch-jobs` (recipes across a folder). Each carries an `agents/openai.yaml` descriptor declaring its dependency on the `gimp` MCP server, so Codex surfaces a missing server instead of improvising. Documented in `docs/SKILLS.md`.
+- `gimp-agent-mcp install-skills` copies them into `~/.claude/skills`, `~/.codex/skills` and `~/.agents/skills`, or a directory given with `--dir`. Existing skills are skipped unless `--force` is passed. The skills also ship inside the wheel, so this works from a plain `pip install`.
+- `.claude-plugin/plugin.json` and `.mcp.json`, making the repository installable as a Claude Code plugin that brings the server and the skills together in one step.
+
+### Changed
+
+- The README and `.mcp.json.example` now pass `--no-sync` to `uv run`. Without it `uv` attempts a virtualenv re-sync on every launch, which fails on Windows with `os error 32` while an earlier server process holds `.venv\Scripts\gimp-agent-mcp.exe`; the client sees only `CONNECTION_CLOSED` with no explanation.
+
 ## [0.2.4] - 2026-09-05
 
 ### Added

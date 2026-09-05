@@ -1,4 +1,4 @@
-"""Command line: serve (default), install-plugin, doctor, launch, smoke."""
+"""Command line: serve (default), install-plugin, install-skills, doctor, launch, smoke."""
 
 from __future__ import annotations
 
@@ -18,6 +18,61 @@ PLUGIN_FILES = ("gimp-agent-bridge.py", "agent_bridge_core.py")
 
 def _plugin_source_dir() -> Path:
     return Path(__file__).resolve().parent / "plugin"
+
+
+# Where each client reads SKILL.md directories from. Claude Code can also install the whole repo as
+# a plugin, which picks up skills/ by convention and needs no copying at all.
+SKILL_TARGETS = {
+    "claude": Path.home() / ".claude" / "skills",
+    "codex": Path.home() / ".codex" / "skills",
+    "agents": Path.home() / ".agents" / "skills",
+}
+
+
+def _skills_source_dir() -> Path | None:
+    """Bundled inside the wheel; at the repo root when running from a checkout."""
+    for candidate in (Path(__file__).resolve().parent / "skills",
+                      Path(__file__).resolve().parents[2] / "skills"):
+        if candidate.is_dir():
+            return candidate
+    return None
+
+
+def cmd_install_skills(args: argparse.Namespace) -> int:
+    src = _skills_source_dir()
+    if src is None:
+        print("Could not find the bundled skills directory.", file=sys.stderr)
+        return 2
+    skills = sorted(p for p in src.iterdir() if (p / "SKILL.md").is_file())
+    if not skills:
+        print(f"No SKILL.md directories under {src}", file=sys.stderr)
+        return 2
+
+    if args.dir:
+        targets = [Path(args.dir)]
+    else:
+        chosen = SKILL_TARGETS if args.client == "all" else {args.client: SKILL_TARGETS[args.client]}
+        # Only write to a client directory that already exists, unless the user named one explicitly.
+        targets = [p for p in chosen.values() if p.parent.is_dir()]
+        if not targets:
+            print("No client skill directory found. Pass --dir to choose one, or install "
+                  "Claude Code or Codex first.", file=sys.stderr)
+            return 2
+
+    for target in targets:
+        target.mkdir(parents=True, exist_ok=True)
+        for skill in skills:
+            dst = target / skill.name
+            if dst.exists() and not args.force:
+                print(f"  skipped {dst} (already exists; pass --force to overwrite)")
+                continue
+            if dst.exists():
+                shutil.rmtree(dst)
+            shutil.copytree(skill, dst, ignore=shutil.ignore_patterns("__pycache__"))
+            print(f"  installed {dst}")
+    print(f"\n{len(skills)} skill(s) from {src}")
+    print("Start a new client session to pick them up.")
+    return 0
 
 
 def cmd_install_plugin(args: argparse.Namespace) -> int:
@@ -136,6 +191,12 @@ def main(argv: list[str] | None = None) -> int:
     p_install = sub.add_parser("install-plugin", help="copy the bridge plug-in into GIMP's plug-ins folder")
     p_install.add_argument("--dir", help="override the plug-in target directory")
 
+    p_skills = sub.add_parser("install-skills", help="copy the bundled skills into a client's skills folder")
+    p_skills.add_argument("--client", choices=("claude", "codex", "agents", "all"), default="all",
+                          help="which client to install for (default: every one found)")
+    p_skills.add_argument("--dir", help="override the target directory")
+    p_skills.add_argument("--force", action="store_true", help="overwrite skills that are already there")
+
     sub.add_parser("doctor", help="report what was found and whether the bridge answers")
 
     p_launch = sub.add_parser("launch", help="start GIMP with the bridge running")
@@ -155,6 +216,7 @@ def main(argv: list[str] | None = None) -> int:
     return {
         "serve": cmd_serve,
         "install-plugin": cmd_install_plugin,
+        "install-skills": cmd_install_skills,
         "doctor": cmd_doctor,
         "launch": cmd_launch,
         "shortcut": cmd_shortcut,

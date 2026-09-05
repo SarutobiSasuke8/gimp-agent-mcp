@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "gimp": {
+      "command": "uvx",
+      "args": ["gimp-agent-mcp", "serve"],
+      "env": {
+        "GIMP_AGENT_ALLOW_PYTHON": "1"
+      }
+    }
+  }
+}

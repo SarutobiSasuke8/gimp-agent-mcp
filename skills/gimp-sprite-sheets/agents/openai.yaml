@@ -1,0 +1,14 @@
+interface:
+  display_name: "GIMP Sprite Sheets"
+  short_description: "Pack, slice and verify sprite sheets with measured bounds"
+  default_prompt: "Use $gimp-sprite-sheets to measure the frames, pack the sheet, verify it against the exported file, and emit the atlas."
+
+dependencies:
+  tools:
+    - type: "mcp"
+      value: "gimp"
+      description: "Local GIMP Agent MCP server"
+      transport: "stdio"
+
+policy:
+  allow_implicit_invocation: true
