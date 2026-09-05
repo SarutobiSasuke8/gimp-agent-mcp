@@ -36,6 +36,7 @@ After changing the plug-in you must reinstall it and restart any running bridge;
 - Windows plug-ins need the `#!/usr/bin/env python3` shebang so GIMP maps them to its bundled interpreter.
 - Headless: `gimp-console -i --batch-interpreter=python-fu-eval -b "<python>"`; the batch code already has `Gimp` in scope.
 - GIMP's Colors > Invert is `gegl:invert-gamma`; there is no `gegl:invert`.
+- `Gimp.DrawableFilter.new` returns NULL for GEGL source/render ops (`gegl:color`, `gegl:linear-gradient`, ...). Fill with `edit_fill` / `edit_gradient_fill` instead. `gegl:plasma` renders only inside an explicit x/y/width/height.
 - `Gimp.Path` is an `Item` but not a `Drawable`: no offsets, width or height. Guard `_item_info` accordingly.
 - Enum classes are created lazily by PyGObject; resolve through the namespace, then `gi._gi.enum_add(gtype)` for GEGL's dynamic enums.
 - Read pixels with `drawable.get_buffer().get(Gegl.Rectangle, scale, "R'G'B'A u8", Gegl.AbyssPolicy.CLAMP)`; write masks through `get_shadow_buffer` + `merge_shadow` + `update`.

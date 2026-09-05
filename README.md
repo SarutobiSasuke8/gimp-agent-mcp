@@ -1,10 +1,11 @@
 # gimp-agent-mcp
 
+![gimp-agent-mcp: the whole of GIMP 3, for AI agents](docs/banner.png)
+
 An MCP server that hands AI agents the whole of GIMP 3, with the eyes and hands to do detailed work.
 
 Claude, Codex, Cursor and any other Model Context Protocol client can open images, inspect layers, call every one of GIMP's ~1000 Procedure Database functions, apply every GEGL filter destructively or as a non-destructive layer effect, measure pixels instead of guessing, see before/after/diff renders, cut subjects out with an AI segmentation model, draw text and paths, and run tested multi-step recipes over whole folders. Windows-first; macOS and Linux paths are implemented.
 
-![Sticker recipe: source logo on the left, finished 512x512 Telegram sticker with stroke and shadow on the right](docs/hero.png)
 
 ## Why this exists
 
@@ -84,6 +85,8 @@ Argument conventions: images and items are integer ids; colours are `"#rrggbb"`,
 | `contact_sheet` | Thumbnails of every image in a folder on a labelled grid. |
 | `sprite_sheet_slice` | Cut a sprite sheet into fixed-size tiles, skipping empty ones. |
 | `fit_and_export` | Scale to a maximum edge length and export by extension. |
+
+![Sticker recipe: padded source on the left, finished 512x512 Telegram sticker on the right](docs/hero.png)
 
 Recipes live in `src/gimp_agent_mcp/recipes/`. Each is a module with `DESCRIPTION`, `PARAMS` and `SOURCE`; see `docs/RECIPES.md` to add one.
 

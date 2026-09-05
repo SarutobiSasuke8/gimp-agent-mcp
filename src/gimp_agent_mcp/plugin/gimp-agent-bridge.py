@@ -767,7 +767,16 @@ class Bridge:
         image = item.get_image()
         image.undo_group_start()
         try:
-            filt = Gimp.DrawableFilter.new(item, op, str(params.get("name") or op))
+            try:
+                filt = Gimp.DrawableFilter.new(item, op, str(params.get("name") or op))
+            except Exception:
+                filt = None
+            if filt is None:
+                raise BridgeError(
+                    f"GIMP does not expose {op!r} as a drawable filter: source/render operations such as gegl:color or "
+                    "gegl:linear-gradient are rejected. Fill or draw with gimp_pdb_call (gimp-drawable-edit-fill, "
+                    "gimp-drawable-edit-gradient-fill) or gimp_run_python instead."
+                )
             config = filt.get_config()
             pspecs = [p for p in config.list_properties()]
             names = [p.name for p in pspecs]
