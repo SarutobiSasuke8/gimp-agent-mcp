@@ -14,6 +14,7 @@ PARAMS = {
     "shadow_blur": {"type": "number", "default": 8, "description": "Shadow blur radius; 0 disables the shadow"},
     "shadow_opacity": {"type": "number", "default": 0.4, "description": "Shadow opacity 0..1"},
     "shadow_color": {"type": "string", "default": "black", "description": "Shadow colour"},
+    "crop_to_content": {"type": "boolean", "default": True, "description": "Trim transparent padding before fitting, so the artwork fills the sticker"},
     "keep_open": {"type": "boolean", "default": False, "description": "Leave the working image open in GIMP"},
 }
 
@@ -40,6 +41,12 @@ try:
         layer = layers[0]
     if not layer.has_alpha():
         layer.add_alpha()
+
+    if params["crop_to_content"]:
+        bb = bridge.op_alpha_bbox({"layer_id": layer.get_id()})
+        if not bb.get("empty") and (bb["width"], bb["height"]) != (image.get_width(), image.get_height()):
+            image.crop(bb["width"], bb["height"], bb["x"], bb["y"])
+            layer = image.get_layers()[0]
 
     w, h = image.get_width(), image.get_height()
     scale = fit / float(max(w, h))
