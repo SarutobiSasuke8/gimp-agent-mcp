@@ -502,7 +502,8 @@ class Bridge:
                 proc = self.pdb.lookup_procedure("gimp-quit")
                 cfg = proc.create_config()
                 cfg.set_property("force", True)
-                GLib.timeout_add(200, lambda: (proc.run(cfg), False)[1])
+                # Run synchronously: the main loop is stopping, so a scheduled timeout would never fire.
+                proc.run(cfg)
         return False
 
     def op_exec(self, params):
