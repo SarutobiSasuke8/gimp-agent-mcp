@@ -139,8 +139,26 @@ def _log_path() -> Path:
     return base / "gimp-agent-launch.log"
 
 
-def launch_gimp(mode: str = "gui", wait_seconds: float = 90.0, client: BridgeClient | None = None) -> dict[str, Any]:
-    """Start GIMP 3 with the bridge procedure running, then wait until it answers."""
+def launch_gimp(mode: str = "gui", wait_seconds: float = 90.0, client: BridgeClient | None = None, retries: int = 1) -> dict[str, Any]:
+    """Start GIMP 3 with the bridge procedure running, then wait until it answers.
+
+    GIMP occasionally loses the batch plug-in during start-up and keeps running without a bridge;
+    in that case the process we started is killed and the launch is retried once.
+    """
+    last: Exception | None = None
+    for attempt in range(retries + 1):
+        try:
+            return _launch_once(mode, wait_seconds, client)
+        except BridgeUnavailable as exc:
+            last = exc
+            if attempt < retries and "did not answer" in str(exc):
+                time.sleep(1.0)
+                continue
+            raise
+    raise BridgeUnavailable(str(last))  # pragma: no cover
+
+
+def _launch_once(mode: str, wait_seconds: float, client: BridgeClient | None) -> dict[str, Any]:
     if mode not in ("gui", "headless"):
         raise ValueError("mode must be 'gui' or 'headless'")
     install_dir = paths.plugin_install_dir()
@@ -175,4 +193,11 @@ def launch_gimp(mode: str = "gui", wait_seconds: float = 90.0, client: BridgeCli
         if info:
             return {"pid": proc.pid, "gimp_pid": info.get("pid"), "mode": info.get("mode"), "log": str(log), "ping": info}
         time.sleep(0.5)
+    # Do not leave a bridge-less GIMP behind; it would block the port and confuse the next launch.
+    with open(log, "ab") as logfh:
+        logfh.write(f"bridge did not answer within {wait_seconds}s; killing pid {proc.pid}\n".encode())
+    try:
+        proc.kill()
+    except OSError:
+        pass
     raise BridgeUnavailable(f"GIMP started (pid {proc.pid}) but the bridge did not answer within {wait_seconds}s; see {log}")
