@@ -16,7 +16,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Changed
 
 - The bridge takes the next free port if the default is busy, and the client follows the newest bridge file, so a GUI bridge can be started while a headless job is running. A bridge only removes the bridge file if it still describes itself.
-- The bridge serves each client connection on its own thread. Previously a second client (another agent session, a test) queued behind a persistent connection and timed out. GIMP work is still serialised on the plug-in main thread.
+- The bridge no longer uses threads at all: sockets are served by GLib IO watches on the plug-in main loop. Several clients can stay connected at once (previously a second client queued behind a persistent connection and timed out), and the intermittent plug-in crashes seen with the accept thread are gone from the stress and smoke runs.
 - `gimp_launch` identifies the bridge it started by the bridge file's start time, not by pinging the default port, so an older bridge cannot masquerade as the new one.
 
 ## [0.2.2] - 2026-09-05

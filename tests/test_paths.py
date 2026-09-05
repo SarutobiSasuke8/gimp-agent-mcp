@@ -49,6 +49,22 @@ def test_launch_command_without_console_uses_no_interface(tmp_path, monkeypatch)
     assert cmd[0] == str(gui) and "--no-interface" in cmd
 
 
+def test_bridge_file_port_beats_requested_port(tmp_path, monkeypatch):
+    from gimp_agent_mcp.bridge_client import BridgeClient
+
+    bf = tmp_path / "agent-bridge.json"
+    core.write_bridge_file(str(bf), port=9915, token="t" * 32, pid=1, gimp_version="3.2", mode="headless")
+    monkeypatch.setenv("GIMP_AGENT_BRIDGE_FILE", str(bf))
+    monkeypatch.setenv("GIMP_AGENT_PORT", "9911")
+    monkeypatch.delenv("GIMP_AGENT_TOKEN", raising=False)
+    assert BridgeClient()._load_bridge_info()[1] == 9915
+    assert BridgeClient(port=9920)._load_bridge_info()[1] == 9920
+    bf.unlink()
+    assert BridgeClient()._load_bridge_info.__self__ is not None
+    monkeypatch.setenv("GIMP_AGENT_TOKEN", "x" * 32)
+    assert BridgeClient()._load_bridge_info()[1] == 9911
+
+
 def test_gimp_exe_env_override(tmp_path, monkeypatch):
     exe = tmp_path / "gimp-3.2.exe"
     exe.write_bytes(b"")

@@ -16,7 +16,7 @@ import os
 import socket
 import sys
 import tempfile
-import threading
+import time
 import traceback
 
 import gi
@@ -334,7 +334,6 @@ class Bridge:
         self.mode = mode
         self.loop = GLib.MainLoop()
         self.server_sock = None
-        self.thread = None
         self.stopping = False
         Gegl.init(None)
         self.pdb = Gimp.get_pdb()
@@ -357,6 +356,16 @@ class Bridge:
 
     # -- lifecycle -----------------------------------------------------------------
 
+    # All socket I/O runs on the plug-in main thread through GLib IO watches. No threads: libgimp and
+    # PyGObject inside a plug-in process are not safe to drive from anywhere else, and every unexplained
+    # plug-in crash before this design had a background thread in the picture.
+
+    @staticmethod
+    def _channel_for(sock):
+        if os.name == "nt":
+            return GLib.IOChannel.win32_new_socket(sock.fileno())
+        return GLib.IOChannel.unix_new(sock.fileno())
+
     def start(self, port_attempts=10):
         """Bind the requested port, or the next free one so a GUI bridge can coexist with a headless one."""
         last_exc = None
@@ -369,18 +378,21 @@ class Bridge:
                 last_exc = exc
                 sock.close()
                 continue
-            sock.listen(4)
-            sock.settimeout(0.5)
+            sock.listen(8)
+            sock.setblocking(False)
             self.server_sock = sock
             self.port = candidate
             break
         else:
             raise OSError(f"no free port in {self.port}..{self.port + port_attempts - 1}: {last_exc}")
-        self.thread = threading.Thread(target=self._accept_loop, name="gimp-agent-bridge", daemon=True)
-        self.thread.start()
+        self.clients = {}
+        self._server_channel = self._channel_for(self.server_sock)
+        self._server_watch = GLib.io_add_watch(self._server_channel, GLib.PRIORITY_DEFAULT, GLib.IOCondition.IN, self._on_accept)
 
     def close(self):
         self.stopping = True
+        for conn in list(self.clients.values()):
+            conn.close()
         if self.server_sock is not None:
             try:
                 self.server_sock.close()
@@ -388,50 +400,19 @@ class Bridge:
                 pass
             self.server_sock = None
 
-    def _accept_loop(self):
-        while not self.stopping:
-            try:
-                client, _addr = self.server_sock.accept()
-            except TimeoutError:
-                continue
-            except OSError:
-                break
-            # One thread per connection so a second client is never queued behind a persistent one.
-            # GIMP work is still serialised on the main thread by _run_on_main.
-            threading.Thread(target=self._serve_client_safely, args=(client,), daemon=True).start()
-
-    def _serve_client_safely(self, client):
+    def _on_accept(self, _channel, _condition):
+        if self.stopping or self.server_sock is None:
+            return False
         try:
-            self._serve_client(client)
-        except (ConnectionError, TimeoutError):
-            pass  # client went away; nothing to report
-        except Exception:
-            traceback.print_exc()
-        finally:
-            try:
-                client.close()
-            except OSError:
-                pass
-
-    def _serve_client(self, client):
-        client.settimeout(None)
-        rfile = client.makefile("rb")
-        wfile = client.makefile("wb")
-        while not self.stopping:
-            line = rfile.readline()
-            if not line:
-                return
-            try:
-                request = core.decode_message(line)
-            except ValueError as exc:
-                wfile.write(core.encode_message({"ok": False, "error": {"type": "BadRequest", "message": str(exc)}}))
-                wfile.flush()
-                continue
-            response = self._handle_request(request)
-            wfile.write(core.encode_message(response))
-            wfile.flush()
-            if request.get("op") == "shutdown" and response.get("ok"):
-                return
+            client, _addr = self.server_sock.accept()
+        except (BlockingIOError, InterruptedError):
+            return True
+        except OSError:
+            return not self.stopping
+        client.setblocking(False)
+        conn = ClientConnection(self, client)
+        self.clients[id(conn)] = conn
+        return True
 
     def _handle_request(self, request):
         req_id = request.get("id")
@@ -441,29 +422,15 @@ class Bridge:
         params = request.get("params") or {}
         if not isinstance(op, str) or not hasattr(self, "op_" + op):
             return {"id": req_id, "ok": False, "error": {"type": "UnknownOp", "message": f"unknown op {op!r}"}}
-        result = self._run_on_main(getattr(self, "op_" + op), params)
+        try:
+            result = {"ok": True, "result": getattr(self, "op_" + op)(params)}
+        except Exception as exc:
+            result = {
+                "ok": False,
+                "error": {"type": type(exc).__name__, "message": str(exc), "traceback": traceback.format_exc()},
+            }
         result["id"] = req_id
         return result
-
-    def _run_on_main(self, func, params):
-        done = threading.Event()
-        box = {}
-
-        def runner():
-            try:
-                box["r"] = {"ok": True, "result": func(params)}
-            except Exception as exc:
-                box["r"] = {
-                    "ok": False,
-                    "error": {"type": type(exc).__name__, "message": str(exc), "traceback": traceback.format_exc()},
-                }
-            finally:
-                done.set()
-            return False
-
-        GLib.idle_add(runner)
-        done.wait()
-        return box["r"]
 
     # -- helpers -------------------------------------------------------------------
 
@@ -1426,6 +1393,83 @@ def _export_with(image, path, options=None):
         msg = values.index(1) if values.length() > 1 else ""
         raise BridgeError(f"{proc.get_name()} returned {status.value_nick}: {msg}")
     return path
+
+
+class ClientConnection:
+    """One connected client, driven by a GLib IO watch on the main thread. Newline-delimited JSON in and out."""
+
+    def __init__(self, bridge, sock):
+        self.bridge = bridge
+        self.sock = sock
+        self.buffer = b""
+        self.channel = bridge._channel_for(sock)
+        self.watch = GLib.io_add_watch(
+            self.channel,
+            GLib.PRIORITY_DEFAULT,
+            GLib.IOCondition.IN | GLib.IOCondition.HUP | GLib.IOCondition.ERR,
+            self._on_event,
+        )
+
+    def close(self):
+        self.bridge.clients.pop(id(self), None)
+        if self.watch:
+            with contextlib.suppress(Exception):
+                GLib.source_remove(self.watch)
+            self.watch = None
+        with contextlib.suppress(OSError):
+            self.sock.close()
+
+    def _send(self, payload):
+        """Non-blocking send loop. Once GLib watches a Win32 socket (WSAEventSelect) its blocking mode can no
+        longer be changed, so we never call setblocking here; the client is always reading, so back-pressure
+        is brief even for multi-megabyte renders."""
+        view = memoryview(core.encode_message(payload))
+        deadline = time.monotonic() + 120.0
+        while view:
+            try:
+                sent = self.sock.send(view)
+            except (BlockingIOError, InterruptedError):
+                if time.monotonic() > deadline:
+                    raise OSError("client stopped reading; send timed out") from None
+                time.sleep(0.002)
+                continue
+            view = view[sent:]
+
+    def _on_event(self, _channel, condition):
+        if condition & (GLib.IOCondition.HUP | GLib.IOCondition.ERR):
+            self.close()
+            return False
+        try:
+            data = self.sock.recv(1 << 16)
+        except (BlockingIOError, InterruptedError):
+            return True
+        except OSError:
+            self.close()
+            return False
+        if not data:
+            self.close()
+            return False
+        self.buffer += data
+        while b"\n" in self.buffer:
+            line, self.buffer = self.buffer.split(b"\n", 1)
+            if not line.strip():
+                continue
+            try:
+                request = core.decode_message(line)
+            except ValueError as exc:
+                response = {"ok": False, "error": {"type": "BadRequest", "message": str(exc)}}
+                request = {}
+            else:
+                response = self.bridge._handle_request(request)
+            try:
+                self._send(response)
+            except OSError:
+                self.close()
+                return False
+            if request.get("op") == "shutdown" and response.get("ok"):
+                self.close()
+                return False
+        return True
 
 
 def _flatten_layers(layers):

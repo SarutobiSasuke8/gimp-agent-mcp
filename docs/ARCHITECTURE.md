@@ -38,7 +38,7 @@ Measurement ops read pixels straight from the drawable's `GeglBuffer` as `R'G'B'
 
 `gimp_remove_background` asks the bridge for a full-resolution PNG of one layer (`layer_png`), runs rembg in the server process, and sends the 8-bit mask back as raw bytes (`set_mask_pixels`). The plug-in never imports rembg or PIL, so GIMP's bundled Python stays untouched and the heavy dependency is optional.
 
-Every op runs on the plug-in's main thread. The socket thread packages the request, schedules it with `GLib.idle_add`, and waits on an `Event`. This matters because libgimp is not thread-safe and the plug-in's wire connection to the GIMP core belongs to the main thread.
+There are no threads in the plug-in. The listening socket and every client socket are non-blocking and watched with `GLib.io_add_watch` (`GLib.IOChannel.win32_new_socket` on Windows, `unix_new` elsewhere) on the main loop that the bridge procedure runs. A complete line is decoded and executed immediately on the main thread and the response is written back with a blocking `sendall`. Several clients can stay connected at once; their requests interleave at line granularity and GIMP work is naturally serialised. This replaced an earlier accept-thread design after repeated unexplained plug-in crashes: libgimp and PyGObject inside a plug-in process should only ever be driven from the main thread.
 
 ## Discovery
 

@@ -52,4 +52,5 @@ Both the launcher (which passes its environment to GIMP) and the plug-in honour 
 - Enum classes are created lazily by PyGObject; resolve through the namespace, then `gi._gi.enum_add(gtype)` for GEGL's dynamic enums.
 - Read pixels with `drawable.get_buffer().get(Gegl.Rectangle, scale, "R'G'B'A u8", Gegl.AbyssPolicy.CLAMP)`; write masks through `get_shadow_buffer` + `merge_shadow` + `update`.
 - Export procedures are `file-<ext>-export`; JPEG quality is 0..1, WebP quality is 0..100, PNG has `compression`.
-- If the plug-in process dies mid-session GIMP logs `gimp_wire_read(): unexpected EOF` and every later call fails to connect; check `gimp-agent-launch.log` in the config dir.
+- If the plug-in process dies mid-session GIMP logs `gimp_wire_read(): unexpected EOF` and every later call fails to connect; check `gimp-agent-launch.log` in the config dir. Both instances append to that log, so sections interleave when two GIMPs run.
+- Never add threads to the plug-in. The 0.1 to 0.2.2 accept-thread design crashed intermittently; GLib IO watches on the main loop fixed it.

@@ -48,7 +48,16 @@ class BridgeClient:
         bf = paths.bridge_file()
         if bf is not None:
             info = core.read_bridge_file(str(bf))
-        port = self.fixed_port or (int(env_port) if env_port else int(info["port"]) if info else core.DEFAULT_PORT)
+        # Precedence: explicit override, then the bridge file (the bridge may have fallen back to another
+        # port than the one requested), then GIMP_AGENT_PORT as the requested port, then the default.
+        if self.fixed_port:
+            port = self.fixed_port
+        elif info:
+            port = int(info["port"])
+        elif env_port:
+            port = int(env_port)
+        else:
+            port = core.DEFAULT_PORT
         token = self.fixed_token or env_token or (info["token"] if info else None)
         if not token:
             raise BridgeUnavailable(
