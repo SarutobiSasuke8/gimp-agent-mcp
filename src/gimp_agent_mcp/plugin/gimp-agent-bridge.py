@@ -845,34 +845,27 @@ class Bridge:
         w, h = drawable.get_width(), drawable.get_height()
         threshold = int(params.get("threshold", 0))
         ok, ox, oy = drawable.get_offsets()
-        max_px = 4_000_000
-        scale = 1.0 if w * h <= max_px else (max_px / float(w * h)) ** 0.5
-        data = self._read_pixels(drawable, 0, 0, w, h, scale)
-        sw = max(1, int(round(w * scale)))
-        sh = len(data) // (4 * sw)
-        alpha = data[3::4]
+        if not drawable.has_alpha():
+            return {"empty": False, "x": ox, "y": oy, "width": w, "height": h, "opaque": True}
         table = bytes([0] * (threshold + 1) + [1] * (255 - threshold)) if threshold < 255 else bytes(256)
-        x0, y0, x1, y1 = sw, sh, -1, -1
-        for row in range(sh):
-            line = alpha[row * sw : (row + 1) * sw].translate(table)
-            stripped = line.lstrip(b"\x00")
-            if not stripped:
-                continue
-            left = sw - len(stripped)
-            right = len(line.rstrip(b"\x00")) - 1
-            x0, x1 = min(x0, left), max(x1, right)
-            y0, y1 = min(y0, row), max(y1, row)
+        x0, y0, x1, y1 = w, h, -1, -1
+        band = max(1, min(h, 4_000_000 // max(1, w)))
+        # Full resolution in horizontal bands: exact, and bounded memory for very large layers.
+        for top in range(0, h, band):
+            rows = min(band, h - top)
+            alpha = self._read_pixels(drawable, 0, top, w, rows, 1.0, "A u8")
+            for r in range(rows):
+                line = alpha[r * w : (r + 1) * w].translate(table)
+                stripped = line.lstrip(b"\x00")
+                if not stripped:
+                    continue
+                left = w - len(stripped)
+                right = len(line.rstrip(b"\x00")) - 1
+                x0, x1 = min(x0, left), max(x1, right)
+                y0, y1 = min(y0, top + r), max(y1, top + r)
         if x1 < 0:
             return {"empty": True}
-        inv = 1.0 / scale
-        return {
-            "empty": False,
-            "x": int(round(x0 * inv)) + ox,
-            "y": int(round(y0 * inv)) + oy,
-            "width": int(round((x1 - x0 + 1) * inv)),
-            "height": int(round((y1 - y0 + 1) * inv)),
-            "approximate": scale < 1.0,
-        }
+        return {"empty": False, "x": x0 + ox, "y": y0 + oy, "width": x1 - x0 + 1, "height": y1 - y0 + 1}
 
     def op_histogram(self, params):
         drawable = self._drawable_for(params)

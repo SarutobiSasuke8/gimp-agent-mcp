@@ -117,6 +117,19 @@ def run_smoke(mode: str = "headless", keep: bool = False, verbose: bool = True, 
 
     check("measure (color/bbox/histogram/dominant)", _measure)
 
+    def _big_bbox():
+        big = client.call("new_image", {"width": 2600, "height": 1800, "fill": "transparent"})
+        bid, blayer = big["image"]["id"], big["layer_id"]
+        client.call("select", {"image_id": bid, "mode": "rect", "x": 1900, "y": 1300, "width": 300, "height": 200})
+        client.call("exec", {"code": f"Gimp.context_push(); Gimp.context_set_foreground(make_color('#ff0000')); item_by_id({blayer}).edit_fill(Gimp.FillType.FOREGROUND); Gimp.context_pop()"})
+        client.call("select", {"image_id": bid, "mode": "none"})
+        bb = client.call("alpha_bbox", {"layer_id": blayer})
+        client.call("close_image", {"image_id": bid})
+        assert (bb["x"], bb["y"], bb["width"], bb["height"]) == (1900, 1300, 300, 200), bb
+        return bb
+
+    check("bbox on a 4.7 MP layer is exact", _big_bbox)
+
     # 5. snapshot + compare render
     def _compare():
         snap = client.call("snapshot", {"image_id": image_id})
