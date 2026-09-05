@@ -8,7 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [0.2.0] - 2026-09-05
 
-The detailed-work release: measurement, comparison renders, selection and masks, text, paths, effect editing, AI cut-outs and a recipe library. 32 tools, 7 recipes, 20 live checks.
+The detailed-work release: measurement, comparison renders, selection and masks, text, paths, effect editing, AI cut-outs and a recipe library. 32 tools, 7 recipes, 22 live checks including the AI cut-out.
 
 ### Added
 

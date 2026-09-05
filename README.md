@@ -32,7 +32,7 @@ cd gimp-agent-mcp
 uv sync                                # add --extra segmentation for AI cut-outs
 uv run gimp-agent-mcp install-plugin   # copies the bridge plug-in into GIMP's plug-ins folder
 uv run gimp-agent-mcp doctor           # shows what was found
-uv run gimp-agent-mcp smoke            # launches headless GIMP and exercises every tool (20 checks)
+uv run gimp-agent-mcp smoke            # launches headless GIMP and exercises every tool (22 checks with --segmentation)
 ```
 
 Then add the server to your MCP client. For Claude Code, from the repo directory:
@@ -116,7 +116,7 @@ The plug-in writes `agent-bridge.json` (port, token, pid) into GIMP's per-user c
 ## Testing
 
 - `uv run pytest`: unit tests, no GIMP needed.
-- `uv run gimp-agent-mcp smoke`: 20 live checks against a headless GIMP. Add `--segmentation` to include the AI cut-out (downloads a small model on first use).
+- `uv run gimp-agent-mcp smoke`: 21 live checks against a headless GIMP. Add `--segmentation` to include the AI cut-out (downloads a small model on first use).
 - CI runs lint and unit tests on Ubuntu and Windows, and a second workflow installs real GIMP 3 on a Windows runner and runs the live smoke test on every push.
 
 ## Security
