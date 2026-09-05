@@ -7,13 +7,13 @@
     "source": "github"
   },
   "version_detail": {
-    "version": "0.2.2"
+    "version": "0.2.3"
   },
   "packages": [
     {
       "registry_name": "pypi",
       "name": "gimp-agent-mcp",
-      "version": "0.2.2",
+      "version": "0.2.3",
       "runtime_hint": "uvx",
       "package_arguments": [
         { "type": "positional", "value": "serve" }

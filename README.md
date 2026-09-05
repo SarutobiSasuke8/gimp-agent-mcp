@@ -55,7 +55,15 @@ Or in `.mcp.json` / `claude_desktop_config.json` (see `.mcp.json.example`):
 }
 ```
 
-The agent calls `gimp_launch` to start GIMP with the bridge running (`mode="gui"` for the normal window, `mode="headless"` for batch work with no UI). If GIMP is already open, click **Filters > Development > Start Agent Bridge** instead. GIMP registers plug-ins at startup, so restart it once after `install-plugin`.
+## Working in your own GIMP window
+
+The agent works inside the GIMP you are using. Three ways to connect it:
+
+- **Menu:** in an open GIMP, click **Filters > Development > Start Agent Bridge**. Every agent edit lands in your layer stack as an undoable step; keep editing by hand alongside it.
+- **Shortcut:** `uv run gimp-agent-mcp shortcut` creates a "GIMP 3 (agent bridge)" launcher on your Desktop (a script in `~/.local/bin` on macOS/Linux). Start GIMP from it and the bridge is already on; no menu click.
+- **Agent-driven:** `gimp_launch(mode="gui")` opens a window with the bridge running; `mode="headless"` runs `gimp-console` with no UI for batch work.
+
+If two bridges are alive (a headless batch job and your window, say), the newer one takes the next free port and agents follow it. GIMP registers plug-ins at startup, so restart it once after `install-plugin`.
 
 ## Tools (33)
 
@@ -136,4 +144,4 @@ Clean-room implementation under Apache-2.0. The author read the existing GPL and
 
 ## Status
 
-`0.2.2`, beta. Verified end to end on Windows 11 with GIMP 3.2.4. macOS and Linux paths are implemented but not yet exercised on real machines; reports welcome. See `ROADMAP.md`.
+`0.2.3`, beta. Verified end to end on Windows 11 with GIMP 3.2.4. macOS and Linux paths are implemented but not yet exercised on real machines; reports welcome. See `ROADMAP.md`.

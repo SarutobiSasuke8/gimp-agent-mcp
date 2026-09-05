@@ -27,13 +27,16 @@ class BridgeUnavailable(BridgeError):
 
 
 class BridgeClient:
-    def __init__(self, timeout: float = core.DEFAULT_TIMEOUT):
+    def __init__(self, timeout: float = core.DEFAULT_TIMEOUT, port: int | None = None, token: str | None = None):
         self.timeout = timeout
         self._sock: socket.socket | None = None
         self._rfile = None
         self._wfile = None
         self._token: str | None = None
         self._port: int | None = None
+        # Explicit overrides win over the environment and the bridge file (used by the launcher).
+        self.fixed_port = port
+        self.fixed_token = token
 
     # -- connection ------------------------------------------------------------------
 
@@ -45,8 +48,8 @@ class BridgeClient:
         bf = paths.bridge_file()
         if bf is not None:
             info = core.read_bridge_file(str(bf))
-        port = int(env_port) if env_port else int(info["port"]) if info else core.DEFAULT_PORT
-        token = env_token or (info["token"] if info else None)
+        port = self.fixed_port or (int(env_port) if env_port else int(info["port"]) if info else core.DEFAULT_PORT)
+        token = self.fixed_token or env_token or (info["token"] if info else None)
         if not token:
             raise BridgeUnavailable(
                 "No bridge token found. Start GIMP with the bridge (gimp_launch) or click "
@@ -125,9 +128,19 @@ class BridgeClient:
 
     def ping(self) -> dict[str, Any] | None:
         try:
-            return self.call("ping", timeout=5.0)
+            info = self.call("ping", timeout=5.0)
         except BridgeError:
             return None
+        # Follow the newest bridge: if the bridge file now names another port (a GUI bridge started after a
+        # headless one, say), drop this connection so the next call reconnects there.
+        try:
+            _host, port, _token = self._load_bridge_info()
+            if self._port is not None and port != self._port:
+                self.close()
+                info = self.call("ping", timeout=5.0)
+        except BridgeError:
+            pass
+        return info
 
 
 # --------------------------------------------------------------------------- launching
@@ -185,13 +198,22 @@ def _launch_once(mode: str, wait_seconds: float, client: BridgeClient | None) ->
             env=env,
         )
     client = client or BridgeClient()
-    deadline = time.time() + wait_seconds
+    launched_at = time.time()
+    bf = paths.bridge_file()
+    deadline = launched_at + wait_seconds
     while time.time() < deadline:
         if proc.poll() is not None:
             raise BridgeUnavailable(f"GIMP exited early with code {proc.returncode}; see {log}")
-        info = client.ping()
-        if info:
-            return {"pid": proc.pid, "gimp_pid": info.get("pid"), "mode": info.get("mode"), "log": str(log), "ping": info}
+        # Identify *our* bridge by the bridge file it writes, not by port: an older bridge may still hold the
+        # default port and would answer a blind ping.
+        written = core.read_bridge_file(str(bf)) if bf else None
+        if written and float(written.get("started", 0)) >= launched_at - 1.0:
+            probe = BridgeClient(port=int(written["port"]), token=str(written["token"]))
+            info = probe.ping()
+            probe.close()
+            if info:
+                client.close()  # next call re-reads the bridge file and lands on the new bridge
+                return {"pid": proc.pid, "gimp_pid": info.get("pid"), "port": int(written["port"]), "mode": info.get("mode"), "log": str(log), "ping": info}
         time.sleep(0.5)
     # Do not leave a bridge-less GIMP behind; it would block the port and confuse the next launch.
     with open(log, "ab") as logfh:

@@ -8,6 +8,9 @@ TOPICS["start"] = """\
 HOW TO WORK WITH GIMP THROUGH THIS SERVER
 
 1. gimp_status. If not connected: gimp_launch(mode="gui") to see a window, mode="headless" for batch jobs.
+   If the user already has GIMP open, ask them to click Filters > Development > Start Agent Bridge instead of
+   launching a second GIMP; then you work in their window and they can edit alongside you. gimp_status reports
+   mode "gui" when that is the case; prefer it for anything the user will look at.
 2. Everything is addressed by integer ids. gimp_open / gimp_new_image return an image id and its layers;
    gimp_image_info(image_id) gives the full layer tree with item ids. Never guess ids.
 3. Edit, then LOOK: gimp_render(image_id) after each meaningful step. Use region={x,y,width,height} to zoom.

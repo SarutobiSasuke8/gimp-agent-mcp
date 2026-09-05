@@ -78,6 +78,42 @@ def cmd_launch(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_shortcut(args: argparse.Namespace) -> int:
+    """Create a launcher that starts GIMP with the bridge already running (Windows: a .lnk; others: a script)."""
+    import subprocess
+
+    try:
+        cmd = paths.launch_command("gui")
+    except FileNotFoundError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
+    exe, argv = cmd[0], cmd[1:]
+    if sys.platform == "win32":
+        desktop = Path(args.dir) if args.dir else Path(os.environ.get("USERPROFILE", str(Path.home()))) / "Desktop"
+        desktop.mkdir(parents=True, exist_ok=True)
+        link = desktop / "GIMP 3 (agent bridge).lnk"
+        quoted = " ".join('"' + a.replace('"', '\\"') + '"' if " " in a or '"' in a else a for a in argv)
+        ps = (
+            "$s = (New-Object -ComObject WScript.Shell).CreateShortcut('" + str(link).replace("'", "''") + "'); "
+            "$s.TargetPath = '" + exe.replace("'", "''") + "'; "
+            "$s.Arguments = '" + quoted.replace("'", "''") + "'; "
+            "$s.WorkingDirectory = '" + str(Path(exe).parent).replace("'", "''") + "'; "
+            "$s.IconLocation = '" + exe.replace("'", "''") + ",0'; "
+            "$s.Description = 'GIMP 3 with the gimp-agent-mcp bridge listening'; $s.Save()"
+        )
+        subprocess.run(["powershell", "-NoProfile", "-Command", ps], check=True)
+        print(f"Created {link}")
+    else:
+        target = Path(args.dir) if args.dir else Path.home() / ".local" / "bin"
+        target.mkdir(parents=True, exist_ok=True)
+        script = target / "gimp-agent"
+        script.write_text("#!/bin/sh\nexec " + " ".join("'" + a.replace("'", "'\\''") + "'" for a in cmd) + ' "$@"\n', encoding="utf-8")
+        script.chmod(0o755)
+        print(f"Created {script}")
+    print("Start GIMP from it and agents connect to that window; no menu click needed.")
+    return 0
+
+
 def cmd_serve(args: argparse.Namespace) -> int:
     from .server import run
 
@@ -106,6 +142,9 @@ def main(argv: list[str] | None = None) -> int:
     p_launch.add_argument("--mode", choices=("gui", "headless"), default="gui")
     p_launch.add_argument("--wait", type=float, default=90.0)
 
+    p_shortcut = sub.add_parser("shortcut", help="create a desktop launcher that starts GIMP with the bridge on")
+    p_shortcut.add_argument("--dir", help="where to put the shortcut (default: Desktop, or ~/.local/bin)")
+
     p_smoke = sub.add_parser("smoke", help="launch headless GIMP and exercise the whole tool surface")
     p_smoke.add_argument("--mode", choices=("gui", "headless"), default="headless")
     p_smoke.add_argument("--keep", action="store_true", help="leave GIMP running afterwards")
@@ -118,6 +157,7 @@ def main(argv: list[str] | None = None) -> int:
         "install-plugin": cmd_install_plugin,
         "doctor": cmd_doctor,
         "launch": cmd_launch,
+        "shortcut": cmd_shortcut,
         "smoke": cmd_smoke,
     }[command](args)
 

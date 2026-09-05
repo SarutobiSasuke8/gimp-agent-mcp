@@ -357,12 +357,25 @@ class Bridge:
 
     # -- lifecycle -----------------------------------------------------------------
 
-    def start(self):
-        self.server_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.server_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        self.server_sock.bind((self.host, self.port))
-        self.server_sock.listen(4)
-        self.server_sock.settimeout(0.5)
+    def start(self, port_attempts=10):
+        """Bind the requested port, or the next free one so a GUI bridge can coexist with a headless one."""
+        last_exc = None
+        for offset in range(max(1, port_attempts)):
+            candidate = self.port + offset
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            try:
+                sock.bind((self.host, candidate))
+            except OSError as exc:
+                last_exc = exc
+                sock.close()
+                continue
+            sock.listen(4)
+            sock.settimeout(0.5)
+            self.server_sock = sock
+            self.port = candidate
+            break
+        else:
+            raise OSError(f"no free port in {self.port}..{self.port + port_attempts - 1}: {last_exc}")
         self.thread = threading.Thread(target=self._accept_loop, name="gimp-agent-bridge", daemon=True)
         self.thread.start()
 
@@ -383,15 +396,22 @@ class Bridge:
                 continue
             except OSError:
                 break
+            # One thread per connection so a second client is never queued behind a persistent one.
+            # GIMP work is still serialised on the main thread by _run_on_main.
+            threading.Thread(target=self._serve_client_safely, args=(client,), daemon=True).start()
+
+    def _serve_client_safely(self, client):
+        try:
+            self._serve_client(client)
+        except (ConnectionError, TimeoutError):
+            pass  # client went away; nothing to report
+        except Exception:
+            traceback.print_exc()
+        finally:
             try:
-                self._serve_client(client)
-            except Exception:
-                traceback.print_exc()
-            finally:
-                try:
-                    client.close()
-                except OSError:
-                    pass
+                client.close()
+            except OSError:
+                pass
 
     def _serve_client(self, client):
         client.settimeout(None)
@@ -1449,17 +1469,21 @@ def _run_bridge(procedure, config):
         Gimp.message(f"GIMP Agent Bridge could not listen on {core.DEFAULT_HOST}:{port}: {exc}")
         raise
 
+    port = bridge.port  # may differ from the request if another bridge holds the port
     core.write_bridge_file(path, port=port, token=token, pid=os.getpid(), gimp_version=Gimp.version(), mode=mode)
     if mode == "gui":
-        Gimp.message(f"GIMP Agent Bridge listening on {core.DEFAULT_HOST}:{port}")
+        Gimp.message(f"GIMP Agent Bridge listening on {core.DEFAULT_HOST}:{port}. Agents will use this window.")
     print(f"[gimp-agent-bridge] listening on {core.DEFAULT_HOST}:{port} ({mode})", file=sys.stderr)
 
     try:
         bridge.loop.run()
     finally:
         bridge.close()
-        with contextlib.suppress(OSError):
-            os.remove(path)
+        # Only remove the bridge file if it still describes this bridge; a newer one may have replaced it.
+        current = core.read_bridge_file(path)
+        if current and int(current.get("pid", -1)) == os.getpid():
+            with contextlib.suppress(OSError):
+                os.remove(path)
     return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
 
 

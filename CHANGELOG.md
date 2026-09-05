@@ -6,6 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.2.3] - 2026-09-05
+
+### Added
+
+- `gimp-agent-mcp shortcut`: a Desktop launcher (or `~/.local/bin/gimp-agent` script) that starts GIMP with the bridge already on, so agents connect to the window you work in without a menu click.
+- README section on working in your own GIMP window; `gimp_help("start")` tells agents to prefer the user's window over launching a second GIMP.
+
+### Changed
+
+- The bridge takes the next free port if the default is busy, and the client follows the newest bridge file, so a GUI bridge can be started while a headless job is running. A bridge only removes the bridge file if it still describes itself.
+- The bridge serves each client connection on its own thread. Previously a second client (another agent session, a test) queued behind a persistent connection and timed out. GIMP work is still serialised on the plug-in main thread.
+- `gimp_launch` identifies the bridge it started by the bridge file's start time, not by pinging the default port, so an older bridge cannot masquerade as the new one.
+
 ## [0.2.2] - 2026-09-05
 
 ### Added
