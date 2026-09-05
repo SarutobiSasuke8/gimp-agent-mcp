@@ -52,9 +52,36 @@ class BridgeError(Exception):
 # --------------------------------------------------------------------------- serialisation
 
 
+_NAMESPACES = {"Gimp": Gimp, "Gegl": Gegl, "GObject": GObject, "GLib": GLib, "Gio": Gio}
+
+
+def _enum_pytype(gtype):
+    """Find the Python class for a GEnum GType.
+
+    PyGObject only creates the class once the namespace attribute has been touched, and GEGL
+    registers many operation enums at runtime with no introspection data at all, so fall back
+    to the namespace lookup and then to gi's own enum wrapper.
+    """
+    pytype = gtype.pytype
+    if pytype is not None:
+        return pytype
+    name = gtype.name
+    for prefix, module in _NAMESPACES.items():
+        if name.startswith(prefix):
+            with contextlib.suppress(Exception):
+                cls = getattr(module, name[len(prefix) :])
+                if cls is not None:
+                    return cls
+    with contextlib.suppress(Exception):
+        from gi import _gi
+
+        return _gi.enum_add(gtype)
+    return None
+
+
 def _enum_members(gtype):
     try:
-        pytype = gtype.pytype
+        pytype = _enum_pytype(gtype)
         if pytype is not None and hasattr(pytype, "__enum_values__"):
             return list(pytype.__enum_values__.values())
     except Exception:

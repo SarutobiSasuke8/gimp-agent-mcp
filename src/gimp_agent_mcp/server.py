@@ -10,6 +10,11 @@ from typing import Any
 
 from mcp.server.mcpserver import Image, MCPServer
 
+try:  # mcp >= 2 reports ToolError as a clean tool failure instead of a server traceback
+    from mcp.server.mcpserver.exceptions import ToolError
+except ImportError:  # pragma: no cover
+    ToolError = RuntimeError  # type: ignore[misc,assignment]
+
 from . import recipes
 from .bridge_client import BridgeClient, BridgeError, BridgeUnavailable, launch_gimp
 
@@ -44,12 +49,13 @@ def _call(op: str, params: dict[str, Any] | None = None, timeout: float | None =
     try:
         return _client.call(op, params, timeout=timeout)
     except BridgeUnavailable as exc:
-        raise RuntimeError(str(exc)) from exc
+        raise ToolError(str(exc)) from exc
     except BridgeError as exc:
         detail = f"{exc.error_type}: {exc}"
-        if exc.trace:
+        # Deliberate validation errors are self-explanatory; only unexpected exceptions carry a trace tail.
+        if exc.trace and exc.error_type != "BridgeError":
             detail += "\n" + exc.trace[-1500:]
-        raise RuntimeError(detail) from exc
+        raise ToolError(detail) from exc
 
 
 # --------------------------------------------------------------------------- session
@@ -82,7 +88,7 @@ def gimp_launch(mode: str = "gui", wait_seconds: int = 90) -> dict[str, Any]:
     try:
         return launch_gimp(mode=mode, wait_seconds=float(wait_seconds), client=_client)
     except (BridgeUnavailable, FileNotFoundError, ValueError) as exc:
-        raise RuntimeError(str(exc)) from exc
+        raise ToolError(str(exc)) from exc
 
 
 @mcp.tool()
@@ -239,7 +245,7 @@ def gimp_run_recipe(name: str, params: dict[str, Any] | None = None) -> dict[str
         module = recipes.get_recipe(name)
         resolved = recipes.resolve_params(name, params)
     except (KeyError, ValueError) as exc:
-        raise RuntimeError(str(exc)) from exc
+        raise ToolError(str(exc)) from exc
     code = "params = " + repr(resolved) + "\n" + module.SOURCE
     out = _call("exec", {"code": code}, timeout=600.0)
     return {"recipe": name, "params": resolved, "result": out.get("result"), "stdout": out.get("stdout", "")}
@@ -257,12 +263,12 @@ def gimp_batch_recipe(
     try:
         module = recipes.get_recipe(name)
     except KeyError as exc:
-        raise RuntimeError(str(exc)) from exc
+        raise ToolError(str(exc)) from exc
     if "input_path" not in module.PARAMS or "output_path" not in module.PARAMS:
-        raise RuntimeError(f"recipe {name} does not take input_path/output_path")
+        raise ToolError(f"recipe {name} does not take input_path/output_path")
     files = sorted(glob.glob(os.path.expanduser(input_glob)))
     if not files:
-        raise RuntimeError(f"no files match {input_glob}")
+        raise ToolError(f"no files match {input_glob}")
     out_dir = Path(os.path.expanduser(output_dir))
     out_dir.mkdir(parents=True, exist_ok=True)
     results = []
