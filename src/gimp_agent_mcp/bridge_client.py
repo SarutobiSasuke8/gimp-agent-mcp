@@ -1,0 +1,178 @@
+"""TCP client for the GIMP Agent Bridge, plus GIMP process launching."""
+
+from __future__ import annotations
+
+import os
+import socket
+import subprocess
+import sys
+import time
+import uuid
+from pathlib import Path
+from typing import Any
+
+from . import paths
+from .plugin import agent_bridge_core as core
+
+
+class BridgeError(RuntimeError):
+    def __init__(self, message: str, error_type: str = "BridgeError", trace: str | None = None):
+        super().__init__(message)
+        self.error_type = error_type
+        self.trace = trace
+
+
+class BridgeUnavailable(BridgeError):
+    pass
+
+
+class BridgeClient:
+    def __init__(self, timeout: float = core.DEFAULT_TIMEOUT):
+        self.timeout = timeout
+        self._sock: socket.socket | None = None
+        self._rfile = None
+        self._wfile = None
+        self._token: str | None = None
+        self._port: int | None = None
+
+    # -- connection ------------------------------------------------------------------
+
+    def _load_bridge_info(self) -> tuple[str, int, str]:
+        host = core.DEFAULT_HOST
+        env_port = os.environ.get("GIMP_AGENT_PORT")
+        env_token = os.environ.get("GIMP_AGENT_TOKEN")
+        info = None
+        bf = paths.bridge_file()
+        if bf is not None:
+            info = core.read_bridge_file(str(bf))
+        port = int(env_port) if env_port else int(info["port"]) if info else core.DEFAULT_PORT
+        token = env_token or (info["token"] if info else None)
+        if not token:
+            raise BridgeUnavailable(
+                "No bridge token found. Start GIMP with the bridge (gimp_launch) or click "
+                "Filters > Development > Start Agent Bridge inside GIMP 3."
+            )
+        return host, port, token
+
+    def connect(self) -> None:
+        if self._sock is not None:
+            return
+        host, port, token = self._load_bridge_info()
+        try:
+            sock = socket.create_connection((host, port), timeout=5.0)
+        except OSError as exc:
+            raise BridgeUnavailable(
+                f"GIMP Agent Bridge is not reachable on {host}:{port} ({exc}). "
+                "Run gimp_launch, or start the bridge from GIMP's Filters > Development menu."
+            ) from exc
+        sock.settimeout(self.timeout)
+        self._sock = sock
+        self._rfile = sock.makefile("rb")
+        self._wfile = sock.makefile("wb")
+        self._token = token
+        self._port = port
+
+    def close(self) -> None:
+        for f in (self._rfile, self._wfile):
+            try:
+                if f:
+                    f.close()
+            except OSError:
+                pass
+        if self._sock:
+            try:
+                self._sock.close()
+            except OSError:
+                pass
+        self._sock = self._rfile = self._wfile = None
+
+    def is_connected(self) -> bool:
+        return self._sock is not None
+
+    # -- calls ------------------------------------------------------------------------
+
+    def call(self, op: str, params: dict[str, Any] | None = None, timeout: float | None = None) -> Any:
+        last_exc: Exception | None = None
+        for attempt in range(2):
+            try:
+                self.connect()
+                assert self._sock and self._rfile and self._wfile
+                if timeout is not None:
+                    self._sock.settimeout(timeout)
+                req_id = uuid.uuid4().hex
+                self._wfile.write(core.encode_message({"id": req_id, "token": self._token, "op": op, "params": params or {}}))
+                self._wfile.flush()
+                line = self._rfile.readline()
+                if not line:
+                    raise ConnectionError("bridge closed the connection")
+                response = core.decode_message(line)
+                if timeout is not None:
+                    self._sock.settimeout(self.timeout)
+                break
+            except (OSError, ConnectionError, ValueError) as exc:
+                last_exc = exc
+                self.close()
+                if attempt == 1 or isinstance(exc, BridgeUnavailable):
+                    raise BridgeUnavailable(f"bridge call {op} failed: {exc}") from exc
+                time.sleep(0.2)
+        else:  # pragma: no cover
+            raise BridgeUnavailable(str(last_exc))
+
+        if not response.get("ok"):
+            err = response.get("error") or {}
+            raise BridgeError(err.get("message", "unknown bridge error"), err.get("type", "BridgeError"), err.get("traceback"))
+        return response.get("result")
+
+    def ping(self) -> dict[str, Any] | None:
+        try:
+            return self.call("ping", timeout=5.0)
+        except BridgeError:
+            return None
+
+
+# --------------------------------------------------------------------------- launching
+
+
+def _log_path() -> Path:
+    cfg = paths.gimp_config_dir()
+    base = cfg if cfg else Path.home()
+    return base / "gimp-agent-launch.log"
+
+
+def launch_gimp(mode: str = "gui", wait_seconds: float = 90.0, client: BridgeClient | None = None) -> dict[str, Any]:
+    """Start GIMP 3 with the bridge procedure running, then wait until it answers."""
+    if mode not in ("gui", "headless"):
+        raise ValueError("mode must be 'gui' or 'headless'")
+    install_dir = paths.plugin_install_dir()
+    if install_dir is None or not (install_dir / "gimp-agent-bridge.py").is_file():
+        raise BridgeUnavailable(
+            "The bridge plug-in is not installed in GIMP's plug-ins folder. Run: gimp-agent-mcp install-plugin"
+        )
+    cmd = paths.launch_command(mode)
+    log = _log_path()
+    creationflags = 0
+    if sys.platform == "win32":
+        creationflags = subprocess.CREATE_NEW_PROCESS_GROUP | getattr(subprocess, "DETACHED_PROCESS", 0)
+    env = dict(os.environ)
+    env["GIMP_AGENT_MODE"] = mode
+    with open(log, "ab") as logfh:
+        logfh.write(f"\n=== launch {time.strftime('%Y-%m-%d %H:%M:%S')} mode={mode}\n{cmd}\n".encode())
+        proc = subprocess.Popen(
+            cmd,
+            stdin=subprocess.DEVNULL,
+            stdout=logfh,
+            stderr=subprocess.STDOUT,
+            creationflags=creationflags,
+            close_fds=True,
+            env=env,
+        )
+    client = client or BridgeClient()
+    deadline = time.time() + wait_seconds
+    while time.time() < deadline:
+        if proc.poll() is not None:
+            raise BridgeUnavailable(f"GIMP exited early with code {proc.returncode}; see {log}")
+        info = client.ping()
+        if info:
+            return {"pid": proc.pid, "gimp_pid": info.get("pid"), "mode": info.get("mode"), "log": str(log), "ping": info}
+        time.sleep(0.5)
+    raise BridgeUnavailable(f"GIMP started (pid {proc.pid}) but the bridge did not answer within {wait_seconds}s; see {log}")

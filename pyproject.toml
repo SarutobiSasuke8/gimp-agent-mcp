@@ -1,0 +1,77 @@
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[project]
+name = "gimp-agent-mcp"
+version = "0.1.0"
+description = "Windows-first MCP server that gives AI agents the whole of GIMP 3: every PDB procedure, every GEGL filter, a render after each step, and repeatable recipes"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+authors = [{ name = "SarutobiSasuke8" }]
+keywords = [
+  "mcp",
+  "model-context-protocol",
+  "gimp",
+  "gimp-3",
+  "image-editing",
+  "ai-agents",
+  "claude",
+  "gegl",
+]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Environment :: Console",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: Apache Software License",
+  "Operating System :: Microsoft :: Windows",
+  "Operating System :: MacOS",
+  "Operating System :: POSIX :: Linux",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Multimedia :: Graphics :: Editors :: Raster-Based",
+]
+dependencies = [
+  "mcp>=2.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8",
+  "ruff>=0.9",
+]
+
+[project.scripts]
+gimp-agent-mcp = "gimp_agent_mcp.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/SarutobiSasuke8/gimp-agent-mcp"
+Repository = "https://github.com/SarutobiSasuke8/gimp-agent-mcp"
+Issues = "https://github.com/SarutobiSasuke8/gimp-agent-mcp/issues"
+Changelog = "https://github.com/SarutobiSasuke8/gimp-agent-mcp/blob/main/CHANGELOG.md"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/gimp_agent_mcp"]
+
+[tool.ruff]
+line-length = 110
+target-version = "py311"
+src = ["src", "tests", "scripts"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP"]
+ignore = ["E501"]
+
+[tool.ruff.lint.per-file-ignores]
+# The plug-in must import gi before the gi.repository modules; ruff cannot see that ordering constraint.
+"src/gimp_agent_mcp/plugin/gimp-agent-bridge.py" = ["E402"]
+# Recipes run inside GIMP with names injected into their namespace.
+"src/gimp_agent_mcp/recipes/*.py" = ["F821"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

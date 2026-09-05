@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "gimp": {
+      "command": "uv",
+      "args": ["run", "--directory", "/absolute/path/to/gimp-agent-mcp", "gimp-agent-mcp", "serve"],
+      "env": {
+        "GIMP_AGENT_ALLOW_PYTHON": "1"
+      }
+    }
+  }
+}
