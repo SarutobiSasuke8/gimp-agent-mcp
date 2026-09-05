@@ -1,6 +1,6 @@
 # gimp-agent-mcp
 
-![gimp-agent-mcp: the whole of GIMP 3, for AI agents](docs/banner.png)
+![gimp-agent-mcp: the whole of GIMP 3, for AI agents](docs/gimp-agent-mcp-banner.png)
 
 An MCP server that hands AI agents the whole of GIMP 3, with the eyes and hands to do detailed work.
 
