@@ -50,6 +50,13 @@ def test_parse_color_rejects_garbage():
         core.parse_color(42)
 
 
+def test_srgb_transfer_roundtrip():
+    for v in (0.0, 0.002, 0.05, 0.2, 0.5, 0.8, 1.0):
+        assert core.srgb_to_linear(core.linear_to_srgb(v)) == pytest.approx(v, abs=1e-6)
+    assert core.linear_to_srgb(0.2140) == pytest.approx(0.5, abs=0.002)
+    assert core.srgb_to_linear(0.5) == pytest.approx(0.2140, abs=0.001)
+
+
 def test_color_to_hex_drops_opaque_alpha():
     assert core.color_to_hex((1.0, 0.0, 0.0, 1.0)) == "#ff0000"
     assert core.color_to_hex((0.0, 0.0, 0.0, 0.5)) == "#00000080"

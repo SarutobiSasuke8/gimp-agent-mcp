@@ -107,6 +107,14 @@ def run_smoke(mode: str = "headless", keep: bool = False, verbose: bool = True, 
     def _measure():
         c = client.call("pixel_color", {"layer_id": layer_id, "x": 75, "y": 50})
         assert c["rgba"][3] == 255 and c["rgba"][0] > 200, c
+        # Colours must round-trip as sRGB: what the agent asks for is what lands in the pixels.
+        probe = client.call("new_image", {"width": 8, "height": 8, "fill": "#2b2f5a"})
+        got = client.call("pixel_color", {"layer_id": probe["layer_id"], "x": 3, "y": 3})["hex"]
+        client.call("close_image", {"image_id": probe["image"]["id"]})
+        assert got == "#2b2f5a", f"sRGB round-trip broke: asked #2b2f5a, got {got}"
+        desc = client.call("filter_describe", {"op": "gegl:dropshadow"})
+        col = [p for p in desc["properties"] if p["name"] == "color"][0]
+        assert col.get("default") == "#000000", col
         bb = client.call("alpha_bbox", {"layer_id": layer_id})
         assert not bb["empty"] and bb["width"] == 150 and bb["height"] == 100, bb
         hist = client.call("histogram", {"layer_id": layer_id, "channels": ["value", "red"]})

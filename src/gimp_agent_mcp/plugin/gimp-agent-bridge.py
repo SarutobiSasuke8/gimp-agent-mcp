@@ -104,7 +104,8 @@ def _serialise(value):
     if isinstance(value, Gimp.Item):
         return {"type": value.__gtype__.name, "id": value.get_id(), "name": value.get_name()}
     if isinstance(value, Gegl.Color):
-        return core.color_to_hex(tuple(value.get_rgba()))
+        r, g, b, a = value.get_rgba()  # linear
+        return core.color_to_hex((core.linear_to_srgb(r), core.linear_to_srgb(g), core.linear_to_srgb(b), a))
     if isinstance(value, Gio.File):
         return value.get_path()
     if isinstance(value, GObject.GEnum):
@@ -242,18 +243,22 @@ def _get_item(item_id):
 
 
 def _make_color(value):
+    """Agent colours are sRGB. Gegl.Color.set_rgba takes linear RGB, so go through GEGL's string
+    parser, which treats #rrggbb[aa] as sRGB and round-trips exactly."""
     if isinstance(value, Gegl.Color):
         return value
     try:
-        r, g, b, a = core.parse_color(value)
+        rgba = core.parse_color(value)
     except ValueError:
         # Let GEGL try CSS names we do not know about.
         color = Gegl.Color.new(str(value))
         if color is None:
             raise
         return color
-    color = Gegl.Color.new("black")
-    color.set_rgba(r, g, b, a)
+    r, g, b, a = rgba
+    color = Gegl.Color.new(f"#{round(r * 255):02x}{round(g * 255):02x}{round(b * 255):02x}{round(a * 255):02x}")
+    if color is None:
+        raise BridgeError(f"GEGL rejected colour {value!r}")
     return color
 
 

@@ -28,7 +28,8 @@ After changing the plug-in you must reinstall it and restart any running bridge;
 ## GIMP 3.2 API notes
 
 - `Gimp.get_images()`, `image.get_layers()`, `image.get_selected_layers()`; no `gimpfu`.
-- Colours are `Gegl.Color`; build with `Gegl.Color.new("black")` then `set_rgba(r, g, b, a)` in 0..1.
+- Colours are `Gegl.Color`. `set_rgba`/`get_rgba` are *linear* RGB; agents mean sRGB. Build from a hex string (`Gegl.Color.new("#rrggbbaa")`, parsed as sRGB) and convert `get_rgba` through `linear_to_srgb` before showing it. The smoke test asserts a `#2b2f5a` fill reads back as `#2b2f5a`.
+- `layer.fill(FOREGROUND)` ignores the colour's alpha; use `FillType.TRANSPARENT` to clear a layer.
 - Filters: `Gimp.DrawableFilter.new(drawable, "gegl:op", name)`, set properties on `get_config()`, then `drawable.merge_filter(f)` (destructive) or `drawable.append_filter(f)` (layer effect).
 - PDB: `Gimp.get_pdb().lookup_procedure(name)`, `proc.create_config()`, `config.set_property(...)`, `proc.run(config)`; index 0 of the returned `ValueArray` is the status.
 - Call `Gimp.displays_flush()` after edits so the GUI repaints.

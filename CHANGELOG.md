@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-09-05
+
+### Fixed
+
+- Colours were interpreted as linear RGB, so every `#rrggbb` an agent passed rendered lighter than asked (`#2b2f5a` came out `#7277a0`). Colours now go through GEGL's sRGB string parser and reported colours are converted back to sRGB. The smoke test asserts an exact round-trip.
+- `gimp_apply_filter` now explains that GEGL source/render operations (`gegl:color`, `gegl:linear-gradient`) are not drawable filters and points at fill/gradient procedures, instead of "constructor returned NULL".
+- `gimp_launch` kills a GIMP that started without a bridge and retries once, instead of leaving an orphan on the port.
+
+### Added
+
+- `docs/banner.png`, built through the bridge itself.
+
 ## [0.2.0] - 2026-09-05
 
 The detailed-work release: measurement, comparison renders, selection and masks, text, paths, effect editing, AI cut-outs and a recipe library. 32 tools, 7 recipes, 22 live checks including the AI cut-out.

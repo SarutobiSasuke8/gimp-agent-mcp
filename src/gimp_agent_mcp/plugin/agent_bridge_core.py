@@ -14,7 +14,7 @@ import secrets
 import time
 from typing import Any
 
-BRIDGE_VERSION = "0.2.0"
+BRIDGE_VERSION = "0.2.1"
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 9877
 BRIDGE_FILE_NAME = "agent-bridge.json"
@@ -158,6 +158,17 @@ def parse_color(value: Any) -> tuple[float, float, float, float]:
         return parse_color(nums)
 
     raise ValueError(f"unrecognised colour: {value!r}")
+
+
+def linear_to_srgb(c: float) -> float:
+    """sRGB transfer function. GEGL reports colours as linear RGB; agents think in sRGB."""
+    c = max(0.0, min(1.0, float(c)))
+    return c * 12.92 if c <= 0.0031308 else 1.055 * (c ** (1 / 2.4)) - 0.055
+
+
+def srgb_to_linear(c: float) -> float:
+    c = max(0.0, min(1.0, float(c)))
+    return c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4
 
 
 def color_to_hex(rgba: tuple[float, float, float, float]) -> str:
