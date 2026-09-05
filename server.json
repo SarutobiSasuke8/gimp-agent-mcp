@@ -1,0 +1,26 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-07-09/server.schema.json",
+  "name": "io.github.SarutobiSasuke8/gimp-agent-mcp",
+  "description": "Gives AI agents the whole of GIMP 3: every PDB procedure, every GEGL filter, renders, measurement, AI cut-outs and recipes. Windows-first.",
+  "repository": {
+    "url": "https://github.com/SarutobiSasuke8/gimp-agent-mcp",
+    "source": "github"
+  },
+  "version_detail": {
+    "version": "0.2.0"
+  },
+  "packages": [
+    {
+      "registry_name": "pypi",
+      "name": "gimp-agent-mcp",
+      "version": "0.2.0",
+      "runtime_hint": "uvx",
+      "package_arguments": [
+        { "type": "positional", "value": "serve" }
+      ],
+      "environment_variables": [
+        { "name": "GIMP_AGENT_ALLOW_PYTHON", "description": "Set to 0 to remove the gimp_run_python tool", "is_required": false }
+      ]
+    }
+  ]
+}

@@ -130,8 +130,10 @@ def gimp_open(path: str) -> dict[str, Any]:
 
 
 @mcp.tool()
-def gimp_export(image_id: int, path: str) -> dict[str, Any]:
-    """Export an image; the extension chooses the format (.png .webp .jpg .tiff .bmp .gif .xcf). Uses GIMP's defaults; call file-*-export via gimp_pdb_call for fine control."""
+def gimp_export(image_id: int, path: str, options: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Export an image; the extension chooses the format (.png .webp .jpg .tiff .bmp .gif .xcf). options are passed to the format's export procedure, e.g. {"quality": 0.85} for JPEG (0..1), {"quality": 80, "lossless": false} for WebP, {"compression": 9} for PNG. Unknown option names return the valid list."""
+    if options:
+        return _call("export_with", {"image_id": image_id, "path": path, "options": options})
     return _call("export", {"image_id": image_id, "path": path})
 
 
@@ -219,6 +221,213 @@ def gimp_apply_filter(
 def gimp_layer_effects(layer_id: int) -> list[dict[str, Any]]:
     """List the non-destructive filters currently attached to a layer."""
     return _call("list_filters_on_layer", {"layer_id": layer_id})
+
+
+# --------------------------------------------------------------------------- measurement + comparison
+
+
+@mcp.tool()
+def gimp_measure(
+    kind: str,
+    image_id: int | None = None,
+    layer_id: int | None = None,
+    x: int | None = None,
+    y: int | None = None,
+    threshold: int = 0,
+    channels: list[str] | None = None,
+    k: int = 6,
+) -> dict[str, Any]:
+    """Measure pixels instead of guessing from a render. kind='color' (rgba at image x,y), 'bbox' (bounding box of non-transparent pixels), 'histogram' (mean/median/std per channel), 'dominant' (top k colours). Defaults to the selected layer."""
+    base = {"image_id": image_id, "layer_id": layer_id}
+    if kind == "color":
+        if x is None or y is None:
+            raise ToolError("kind='color' needs x and y")
+        return _call("pixel_color", {**base, "x": x, "y": y})
+    if kind == "bbox":
+        return _call("alpha_bbox", {**base, "threshold": threshold})
+    if kind == "histogram":
+        return _call("histogram", {**base, "channels": channels})
+    if kind == "dominant":
+        return _call("dominant_colors", {**base, "k": k})
+    raise ToolError("kind must be color, bbox, histogram or dominant")
+
+
+@mcp.tool()
+def gimp_snapshot(image_id: int) -> dict[str, Any]:
+    """Take a hidden snapshot of an image's current state so gimp_render_compare can show before/after later."""
+    return _call("snapshot", {"image_id": image_id})
+
+
+@mcp.tool()
+def gimp_render_compare(image_id: int, snapshot_id: int, panels: str = "before,after,diff", max_size: int = 1024, drop_snapshot: bool = False) -> Image:
+    """Side-by-side render of a snapshot and the current image. panels is a comma list of before, after, diff (diff = pixel difference, black means identical)."""
+    result = _call("render_compare", {"image_id": image_id, "snapshot_id": snapshot_id, "panels": panels, "max_size": max_size})
+    if drop_snapshot:
+        _call("drop_snapshot", {"snapshot_id": snapshot_id})
+    return Image(data=base64.b64decode(result["png_base64"]), format="png")
+
+
+# --------------------------------------------------------------------------- selection, masks, layers
+
+
+@mcp.tool()
+def gimp_select(
+    image_id: int,
+    mode: str = "bounds",
+    op: str = "replace",
+    x: float | None = None,
+    y: float | None = None,
+    width: float | None = None,
+    height: float | None = None,
+    color: str | None = None,
+    threshold: float = 0.15,
+    sample_merged: bool = False,
+    layer_id: int | None = None,
+    item_id: int | None = None,
+    amount: float | None = None,
+) -> dict[str, Any]:
+    """Selection in one tool. mode: rect, ellipse (x,y,width,height), color (color, threshold 0..1, layer_id), alpha (layer_id: select the layer's opaque pixels), item (item_id: path or channel), all, none, invert, grow/shrink/feather/border (amount), bounds (just report). op: replace, add, subtract, intersect. Returns the selection bounds."""
+    return _call(
+        "select",
+        {
+            "image_id": image_id,
+            "mode": mode,
+            "op": op,
+            "x": x,
+            "y": y,
+            "width": width,
+            "height": height,
+            "color": color,
+            "threshold": threshold,
+            "sample_merged": sample_merged,
+            "layer_id": layer_id,
+            "item_id": item_id,
+            "amount": amount,
+        },
+    )
+
+
+@mcp.tool()
+def gimp_layer_mask(layer_id: int, action: str = "add", type: str = "selection") -> dict[str, Any]:
+    """Layer masks. action='add' with type selection|alpha|alpha-transfer|white|black|copy; 'apply' bakes the mask in; 'remove' discards it; 'enable'/'disable' toggle it; 'show'/'hide' preview it."""
+    return _call("layer_mask", {"layer_id": layer_id, "action": action, "type": type})
+
+
+@mcp.tool()
+def gimp_layer(
+    action: str,
+    layer_id: int | None = None,
+    image_id: int | None = None,
+    name: str | None = None,
+    width: int | None = None,
+    height: int | None = None,
+    fill: str | None = None,
+    x: int | None = None,
+    y: int | None = None,
+    dx: float | None = None,
+    dy: float | None = None,
+    opacity: float | None = None,
+    mode: str | None = None,
+    visible: bool | None = None,
+    lock: bool | None = None,
+    position: int | None = None,
+    parent_id: int | None = None,
+    merge_type: str | None = None,
+    local_origin: bool = False,
+) -> dict[str, Any]:
+    """Layer operations. action: new (image_id, name, width, height, fill, x, y, position), set (name, visible, opacity, mode, x, y, lock), move (dx, dy), reorder (position, parent_id), duplicate, merge_down, delete, resize_to_image, scale (width, height), add_alpha, crop_to_content, info."""
+    params = {k: v for k, v in locals().items() if v is not None}
+    return _call("layer", params)
+
+
+@mcp.tool()
+def gimp_layer_effect(
+    filter_id: int,
+    action: str = "set",
+    params: dict[str, Any] | None = None,
+    visible: bool | None = None,
+    opacity: float | None = None,
+    blend_mode: str | None = None,
+) -> dict[str, Any]:
+    """Edit or delete a non-destructive layer effect (ids from gimp_layer_effects). action='set' updates params/visible/opacity/blend_mode; 'delete' removes it."""
+    return _call("layer_effect", {"filter_id": filter_id, "action": action, "params": params or {}, "visible": visible, "opacity": opacity, "blend_mode": blend_mode})
+
+
+# --------------------------------------------------------------------------- text + paths
+
+
+@mcp.tool()
+def gimp_list_fonts(filter: str = "", limit: int = 200) -> dict[str, Any]:
+    """List installed font names, optionally filtered by a regex."""
+    return _call("list_fonts", {"filter": filter, "limit": limit})
+
+
+@mcp.tool()
+def gimp_text(
+    image_id: int | None = None,
+    layer_id: int | None = None,
+    text: str | None = None,
+    x: int | None = None,
+    y: int | None = None,
+    size: float | None = None,
+    font: str | None = None,
+    color: str | None = None,
+    justify: str | None = None,
+    letter_spacing: float | None = None,
+    line_spacing: float | None = None,
+    box_width: float | None = None,
+    box_height: float | None = None,
+    name: str | None = None,
+) -> dict[str, Any]:
+    """Create a text layer (image_id + text) or edit one (layer_id). size in px, font by name (gimp_list_fonts), colour, justify left|center|right|fill, spacing, optional fixed box."""
+    params = {k: v for k, v in locals().items() if v is not None}
+    return _call("text", params)
+
+
+@mcp.tool()
+def gimp_path(
+    action: str = "create",
+    image_id: int | None = None,
+    path_id: int | None = None,
+    name: str | None = None,
+    strokes: list[dict[str, Any]] | None = None,
+    layer_id: int | None = None,
+    color: str | None = None,
+    width: float = 2.0,
+    op: str = "replace",
+) -> dict[str, Any]:
+    """Vector paths. action='create' (image_id, strokes=[{type:'line'|'bezier', points:[[x,y],...], closed:bool}]; bezier points after the first are control1, control2, anchor triples), 'select' (path to selection), 'stroke' (draw it on layer_id with color and width), 'fill' (fill it on layer_id), 'delete'."""
+    params = {k: v for k, v in locals().items() if v is not None}
+    return _call("path", params)
+
+
+# --------------------------------------------------------------------------- segmentation
+
+
+@mcp.tool()
+def gimp_remove_background(layer_id: int, mode: str = "mask", model: str = "u2net", alpha_matting: bool = False) -> dict[str, Any]:
+    """AI subject cut-out. Runs a segmentation model on the layer and writes the result as an editable layer mask (mode='mask') or bakes it into the alpha channel (mode='apply'). Needs the optional segmentation extra. Models: u2net (default), isnet-general-use, u2net_human_seg, isnet-anime, silueta."""
+    from . import segmentation
+
+    if not segmentation.available():
+        raise ToolError("segmentation is not installed: run `uv sync --extra segmentation` in the gimp-agent-mcp directory")
+    src = _call("layer_png", {"layer_id": layer_id}, timeout=300.0)
+    try:
+        result = segmentation.subject_mask(base64.b64decode(src["png_base64"]), model=model, alpha_matting=alpha_matting)
+    except (RuntimeError, ValueError) as exc:
+        raise ToolError(str(exc)) from exc
+    layer = _call(
+        "set_mask_pixels",
+        {
+            "layer_id": layer_id,
+            "width": result["width"],
+            "height": result["height"],
+            "gray_base64": base64.b64encode(result["gray"]).decode("ascii"),
+            "apply": mode == "apply",
+        },
+        timeout=300.0,
+    )
+    return {"layer": layer, "model": result["model"], "subject_bbox": result["bbox"], "mode": mode}
 
 
 # --------------------------------------------------------------------------- python + recipes

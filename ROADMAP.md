@@ -1,26 +1,22 @@
 # Roadmap
 
-## 0.1 (now)
+## 0.2 (shipped 2026-09-05)
 
-Prove the generic surface works end to end on Windows with GIMP 3.2, and that an agent can complete a real job (the Telegram sticker recipe) from a fresh clone.
-
-## 0.2
-
-- Verify macOS and Linux (native, Flatpak, Snap) paths with real runs; fix `find_gimp` and plug-in install for each.
-- Non-destructive editing: edit, reorder, toggle and remove layer effects, not only list them.
-- Text layers and paths as first-class tools; both are awkward through raw PDB calls.
-- Selection helpers (by colour, by alpha, grow/shrink/feather) as one tool with a `mode` argument.
-- `gimp_render` diff mode: return a side-by-side of before/after for the last operation.
-- Publish to PyPI and the MCP Registry; `uvx gimp-agent-mcp` as the install path.
+Detailed work: measurement, before/after/diff renders, selection and masks, text, paths, effect editing, AI cut-outs, seven recipes, live Windows CI with a real GIMP install.
 
 ## 0.3
 
-- More recipes: background removal with review, batch watermark, sprite-sheet slice and pack, favicon and app-icon sets, web image optimisation with size budgets.
+- Verify macOS and Linux (native, Flatpak, Snap) with real runs; fix `find_gimp` and plug-in install for each.
+- Publish to PyPI through trusted publishing and list in the MCP Registry; `uvx gimp-agent-mcp` as the install path.
+- Reorder layer effects and move layers between groups.
+- Guided masks: refine a segmentation mask with GEGL (feather, shrink, matting) in one call.
+- `gimp_render` overlay mode: draw selection bounds, layer boxes and measurement points onto the render so the agent can see coordinates.
+- Recipes: colour-grade presets, sticker pack (batch + Telegram/WhatsApp specs), social crops (square, story, banner) from one source.
 - Recipe parameters exposed as JSON Schema so clients can render forms.
-- Streamable HTTP transport behind an opt-in flag, still loopback-only by default.
-- Optional Windows service / launch agent so the bridge starts with GIMP.
 
 ## Later
 
-- Script-Fu bridge for the remaining `.scm` procedures that have no Python equivalent.
+- Streamable HTTP transport behind an opt-in flag, still loopback-only by default.
+- Script-Fu bridge for the remaining `.scm` procedures with no Python equivalent.
+- Optional Windows service / launch agent so the bridge starts with GIMP.
 - A short recorded demo and a write-up on the generic-introspection approach versus hand-written tool wrappers.

@@ -1,0 +1,45 @@
+name: Live smoke (Windows + GIMP 3)
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  live:
+    name: Real GIMP 3 headless smoke test
+    runs-on: windows-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - name: Install GIMP 3 (official Inno installer, silent)
+        shell: pwsh
+        run: |
+          $url = "https://download.gimp.org/gimp/v3.2/windows/gimp-3.2.4-setup.exe"
+          Invoke-WebRequest -Uri $url -OutFile "$env:RUNNER_TEMP\gimp-setup.exe"
+          Start-Process -FilePath "$env:RUNNER_TEMP\gimp-setup.exe" -ArgumentList "/VERYSILENT","/NORESTART","/SUPPRESSMSGBOXES","/ALLUSERS" -Wait
+          Get-ChildItem "C:\Program Files\GIMP 3\bin" -Filter "gimp-console-*.exe" | Select-Object -ExpandProperty FullName
+      - name: Install project
+        run: uv sync --extra dev
+      - name: Install bridge plug-in
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force "$env:APPDATA\GIMP\3.2" | Out-Null
+          uv run gimp-agent-mcp install-plugin
+          uv run gimp-agent-mcp doctor
+      - name: Headless smoke test
+        env:
+          GIMP_AGENT_LIVE: "1"
+        run: uv run gimp-agent-mcp smoke --mode headless
+      - name: Upload launch log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gimp-agent-launch-log
+          path: ${{ env.APPDATA }}/GIMP/3.2/gimp-agent-launch.log
+          if-no-files-found: ignore

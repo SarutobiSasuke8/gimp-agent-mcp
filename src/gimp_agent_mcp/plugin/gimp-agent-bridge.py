@@ -157,18 +157,21 @@ def _describe_pspec(pspec):
 
 
 def _item_info(item, depth=0):
-    ok, x, y = item.get_offsets()
     info = {
         "id": item.get_id(),
         "name": item.get_name(),
         "type": item.__gtype__.name,
         "visible": item.get_visible(),
-        "width": item.get_width(),
-        "height": item.get_height(),
-        "x": x,
-        "y": y,
         "locked": item.get_lock_content(),
     }
+    if isinstance(item, Gimp.Drawable):
+        ok, x, y = item.get_offsets()
+        info.update({"width": item.get_width(), "height": item.get_height(), "x": x, "y": y})
+    elif isinstance(item, Gimp.Path):
+        with contextlib.suppress(Exception):
+            strokes = item.get_strokes()
+            info["strokes"] = len(strokes)
+            info["stroke_ids"] = list(strokes)
     if isinstance(item, Gimp.Layer):
         info["opacity"] = item.get_opacity()
         info["mode"] = item.get_mode().value_nick
@@ -340,10 +343,12 @@ class Bridge:
             "import os, sys, math, json, time\n",
             self.ns,
         )
+        self.snapshots = {}
         self.ns["bridge"] = self
         self.ns["image_by_id"] = _get_image
         self.ns["item_by_id"] = _get_item
         self.ns["make_color"] = _make_color
+        self.ns["export_with"] = _export_with
 
     # -- lifecycle -----------------------------------------------------------------
 
@@ -805,6 +810,595 @@ class Bridge:
                 }
             )
         return out
+
+    # Pixels and measurement --------------------------------------------------------
+
+    def _drawable_for(self, params, image=None):
+        if params.get("layer_id") is not None:
+            item = _get_item(params["layer_id"])
+            if not isinstance(item, Gimp.Drawable):
+                raise BridgeError("layer_id must reference a drawable")
+            return item
+        image = image or _get_image(params.get("image_id"))
+        selected = image.get_selected_layers() or image.get_layers()
+        if not selected:
+            raise BridgeError("image has no layers")
+        return selected[0]
+
+    @staticmethod
+    def _read_pixels(drawable, x, y, w, h, scale=1.0, fmt="R'G'B'A u8"):
+        rect = Gegl.Rectangle.new(int(x), int(y), int(w), int(h))
+        data = drawable.get_buffer().get(rect, float(scale), fmt, Gegl.AbyssPolicy.CLAMP)
+        return bytes(data)
+
+    def op_pixel_color(self, params):
+        drawable = self._drawable_for(params)
+        ok, ox, oy = drawable.get_offsets()
+        x, y = int(params["x"]) - ox, int(params["y"]) - oy
+        if not (0 <= x < drawable.get_width() and 0 <= y < drawable.get_height()):
+            raise BridgeError("point lies outside the drawable")
+        r, g, b, a = self._read_pixels(drawable, x, y, 1, 1)
+        return {"x": int(params["x"]), "y": int(params["y"]), "rgba": [r, g, b, a], "hex": core.color_to_hex((r / 255, g / 255, b / 255, a / 255))}
+
+    def op_alpha_bbox(self, params):
+        drawable = self._drawable_for(params)
+        w, h = drawable.get_width(), drawable.get_height()
+        threshold = int(params.get("threshold", 0))
+        ok, ox, oy = drawable.get_offsets()
+        max_px = 4_000_000
+        scale = 1.0 if w * h <= max_px else (max_px / float(w * h)) ** 0.5
+        data = self._read_pixels(drawable, 0, 0, w, h, scale)
+        sw = max(1, int(round(w * scale)))
+        sh = len(data) // (4 * sw)
+        alpha = data[3::4]
+        table = bytes([0] * (threshold + 1) + [1] * (255 - threshold)) if threshold < 255 else bytes(256)
+        x0, y0, x1, y1 = sw, sh, -1, -1
+        for row in range(sh):
+            line = alpha[row * sw : (row + 1) * sw].translate(table)
+            stripped = line.lstrip(b"\x00")
+            if not stripped:
+                continue
+            left = sw - len(stripped)
+            right = len(line.rstrip(b"\x00")) - 1
+            x0, x1 = min(x0, left), max(x1, right)
+            y0, y1 = min(y0, row), max(y1, row)
+        if x1 < 0:
+            return {"empty": True}
+        inv = 1.0 / scale
+        return {
+            "empty": False,
+            "x": int(round(x0 * inv)) + ox,
+            "y": int(round(y0 * inv)) + oy,
+            "width": int(round((x1 - x0 + 1) * inv)),
+            "height": int(round((y1 - y0 + 1) * inv)),
+            "approximate": scale < 1.0,
+        }
+
+    def op_histogram(self, params):
+        drawable = self._drawable_for(params)
+        out = {}
+        channels = params.get("channels") or ["value", "red", "green", "blue", "alpha"]
+        for name in channels:
+            chan = _coerce_enum(name, Gimp.HistogramChannel.__gtype__)
+            try:
+                res = tuple(drawable.histogram(chan, 0.0, 1.0))
+            except Exception as exc:
+                out[name] = {"error": str(exc)}
+                continue
+            vals = res[-6:]
+            out[name] = dict(zip(("mean", "std_dev", "median", "pixels", "count", "percentile"), vals, strict=False))
+        return out
+
+    def op_dominant_colors(self, params):
+        drawable = self._drawable_for(params)
+        k = int(params.get("k", 6))
+        w, h = drawable.get_width(), drawable.get_height()
+        scale = min(1.0, 160.0 / max(w, h))
+        data = self._read_pixels(drawable, 0, 0, w, h, scale)
+        counts = {}
+        opaque = 0
+        for i in range(0, len(data) - 3, 4):
+            if data[i + 3] < 128:
+                continue
+            opaque += 1
+            key = (data[i] >> 4, data[i + 1] >> 4, data[i + 2] >> 4)
+            counts[key] = counts.get(key, 0) + 1
+        top = sorted(counts.items(), key=lambda kv: kv[1], reverse=True)[:k]
+        return {
+            "sampled_pixels": opaque,
+            "colors": [
+                {"hex": core.color_to_hex(((r * 16 + 8) / 255, (g * 16 + 8) / 255, (b * 16 + 8) / 255, 1.0)), "share": round(n / opaque, 4)}
+                for (r, g, b), n in top
+            ]
+            if opaque
+            else [],
+        }
+
+    # Snapshots and comparison renders -------------------------------------------------
+
+    def _flat_copy(self, image):
+        """Duplicate an image and merge it to one visible layer. Caller deletes the duplicate."""
+        dup = image.duplicate()
+        visible = [layer for layer in dup.get_layers() if layer.get_visible()]
+        if len(visible) > 1:
+            dup.merge_visible_layers(Gimp.MergeType.CLIP_TO_IMAGE)
+        layers = dup.get_layers()
+        if not layers:
+            raise BridgeError("image has no layers to render")
+        return dup, layers[0]
+
+    def _png_bytes(self, image, max_size):
+        w, h = image.get_width(), image.get_height()
+        if max_size > 0 and max(w, h) > max_size:
+            scale = max_size / float(max(w, h))
+            image.scale(max(1, int(round(w * scale))), max(1, int(round(h * scale))))
+        fd, tmp = tempfile.mkstemp(prefix="gimp-agent-", suffix=".png")
+        os.close(fd)
+        try:
+            if not Gimp.file_save(Gimp.RunMode.NONINTERACTIVE, image, Gio.File.new_for_path(tmp), None):
+                raise BridgeError("render export failed")
+            with open(tmp, "rb") as fh:
+                return fh.read(), image.get_width(), image.get_height()
+        finally:
+            with contextlib.suppress(OSError):
+                os.remove(tmp)
+
+    def op_snapshot(self, params):
+        image = _get_image(params["image_id"])
+        snap = image.duplicate()
+        self.snapshots[snap.get_id()] = snap
+        return {"snapshot_id": snap.get_id(), "image_id": image.get_id(), "width": snap.get_width(), "height": snap.get_height()}
+
+    def op_drop_snapshot(self, params):
+        sid = int(params["snapshot_id"])
+        snap = self.snapshots.pop(sid, None)
+        if snap is not None:
+            with contextlib.suppress(Exception):
+                snap.delete()
+        return {"dropped": sid}
+
+    def op_render_compare(self, params):
+        image = _get_image(params["image_id"])
+        snap = self.snapshots.get(int(params["snapshot_id"]))
+        if snap is None:
+            raise BridgeError("unknown snapshot_id; call snapshot first")
+        panels = str(params.get("panels") or "before,after,diff").split(",")
+        max_size = int(params.get("max_size") or 1024)
+        before_dup, before_layer = self._flat_copy(snap)
+        after_dup, after_layer = self._flat_copy(image)
+        w = max(before_dup.get_width(), after_dup.get_width())
+        h = max(before_dup.get_height(), after_dup.get_height())
+        canvas = Gimp.Image.new(w * len(panels), h, Gimp.ImageBaseType.RGB)
+        try:
+            for idx, panel in enumerate(p.strip() for p in panels):
+                if panel == "before":
+                    layer = Gimp.Layer.new_from_drawable(before_layer, canvas)
+                    canvas.insert_layer(layer, None, 0)
+                elif panel == "after":
+                    layer = Gimp.Layer.new_from_drawable(after_layer, canvas)
+                    canvas.insert_layer(layer, None, 0)
+                elif panel == "diff":
+                    base = Gimp.Layer.new_from_drawable(before_layer, canvas)
+                    canvas.insert_layer(base, None, 0)
+                    top = Gimp.Layer.new_from_drawable(after_layer, canvas)
+                    canvas.insert_layer(top, None, 0)
+                    top.set_mode(Gimp.LayerMode.DIFFERENCE)
+                    base.set_offsets(idx * w, 0)
+                    top.set_offsets(idx * w, 0)
+                    layer = canvas.merge_down(top, Gimp.MergeType.CLIP_TO_IMAGE)
+                else:
+                    raise BridgeError("panels must be a comma list of before, after, diff")
+                layer.set_offsets(idx * w, 0)
+                layer.set_name(panel)
+            if len(canvas.get_layers()) > 1:
+                canvas.merge_visible_layers(Gimp.MergeType.CLIP_TO_IMAGE)
+            data, cw, ch = self._png_bytes(canvas, max_size)
+        finally:
+            canvas.delete()
+            before_dup.delete()
+            after_dup.delete()
+        return {"png_base64": base64.b64encode(data).decode("ascii"), "width": cw, "height": ch, "panels": panels, "panel_width": w, "panel_height": h}
+
+    def op_layer_png(self, params):
+        """Full-resolution PNG of a single drawable at its own size (used for segmentation)."""
+        drawable = self._drawable_for(params)
+        w, h = drawable.get_width(), drawable.get_height()
+        tmp_img = Gimp.Image.new(w, h, Gimp.ImageBaseType.RGB)
+        try:
+            layer = Gimp.Layer.new_from_drawable(drawable, tmp_img)
+            tmp_img.insert_layer(layer, None, 0)
+            layer.set_offsets(0, 0)
+            data, cw, ch = self._png_bytes(tmp_img, 0)
+        finally:
+            tmp_img.delete()
+        return {"png_base64": base64.b64encode(data).decode("ascii"), "width": cw, "height": ch, "layer_id": drawable.get_id()}
+
+    # Selection, masks, layers ---------------------------------------------------------
+
+    def op_select(self, params):
+        image = _get_image(params["image_id"])
+        mode = str(params.get("mode") or "bounds").lower()
+        op = _coerce_enum(params.get("op") or "replace", Gimp.ChannelOps.__gtype__)
+        image.undo_group_start()
+        try:
+            if mode == "rect":
+                image.select_rectangle(op, float(params["x"]), float(params["y"]), float(params["width"]), float(params["height"]))
+            elif mode == "ellipse":
+                image.select_ellipse(op, float(params["x"]), float(params["y"]), float(params["width"]), float(params["height"]))
+            elif mode == "color":
+                drawable = self._drawable_for(params, image)
+                Gimp.context_push()
+                try:
+                    Gimp.context_set_sample_threshold(float(params.get("threshold", 0.15)))
+                    Gimp.context_set_sample_merged(bool(params.get("sample_merged", False)))
+                    Gimp.context_set_antialias(True)
+                    image.select_color(op, drawable, _make_color(params["color"]))
+                finally:
+                    Gimp.context_pop()
+            elif mode == "alpha":
+                image.select_item(op, self._drawable_for(params, image))
+            elif mode == "item":
+                image.select_item(op, _get_item(params["item_id"]))
+            elif mode == "all":
+                Gimp.Selection.all(image)
+            elif mode == "none":
+                Gimp.Selection.none(image)
+            elif mode == "invert":
+                Gimp.Selection.invert(image)
+            elif mode == "grow":
+                Gimp.Selection.grow(image, int(params["amount"]))
+            elif mode == "shrink":
+                Gimp.Selection.shrink(image, int(params["amount"]))
+            elif mode == "feather":
+                Gimp.Selection.feather(image, float(params["amount"]))
+            elif mode == "border":
+                Gimp.Selection.border(image, int(params["amount"]))
+            elif mode != "bounds":
+                raise BridgeError("unknown selection mode " + mode)
+        finally:
+            image.undo_group_end()
+            self._flush()
+        non_empty, x1, y1, x2, y2 = tuple(Gimp.Selection.bounds(image))[-5:]
+        return {"non_empty": bool(non_empty), "x1": x1, "y1": y1, "x2": x2, "y2": y2, "width": x2 - x1, "height": y2 - y1}
+
+    def op_layer_mask(self, params):
+        layer = _get_item(params["layer_id"])
+        if not isinstance(layer, Gimp.Layer):
+            raise BridgeError("layer_id must reference a layer")
+        action = str(params.get("action") or "add").lower()
+        image = layer.get_image()
+        image.undo_group_start()
+        try:
+            if action == "add":
+                if layer.get_mask() is not None:
+                    raise BridgeError("layer already has a mask; remove or apply it first")
+                mask_type = _coerce_enum(params.get("type") or "selection", Gimp.AddMaskType.__gtype__)
+                mask = layer.create_mask(mask_type)
+                layer.add_mask(mask)
+            elif action in ("apply", "remove"):
+                if layer.get_mask() is None:
+                    raise BridgeError("layer has no mask")
+                layer.remove_mask(Gimp.MaskApplyMode.APPLY if action == "apply" else Gimp.MaskApplyMode.DISCARD)
+            elif action in ("enable", "disable"):
+                layer.set_apply_mask(action == "enable")
+            elif action in ("show", "hide"):
+                layer.set_show_mask(action == "show")
+            else:
+                raise BridgeError("action must be add, apply, remove, enable, disable, show or hide")
+        finally:
+            image.undo_group_end()
+            self._flush()
+        return _item_info(layer)
+
+    def op_set_mask_pixels(self, params):
+        """Write an 8-bit greyscale mask (base64 raw bytes, row-major) onto a layer's mask, creating one if needed."""
+        layer = _get_item(params["layer_id"])
+        if not isinstance(layer, Gimp.Layer):
+            raise BridgeError("layer_id must reference a layer")
+        w, h = int(params["width"]), int(params["height"])
+        data = base64.b64decode(params["gray_base64"])
+        if len(data) != w * h:
+            raise BridgeError(f"mask bytes ({len(data)}) do not match {w}x{h}")
+        if (w, h) != (layer.get_width(), layer.get_height()):
+            raise BridgeError(f"mask size {w}x{h} does not match layer {layer.get_width()}x{layer.get_height()}")
+        image = layer.get_image()
+        image.undo_group_start()
+        try:
+            mask = layer.get_mask()
+            if mask is None:
+                mask = layer.create_mask(Gimp.AddMaskType.WHITE)
+                layer.add_mask(mask)
+            shadow = mask.get_shadow_buffer()
+            shadow.set(Gegl.Rectangle.new(0, 0, w, h), "Y u8", data)
+            shadow.flush()
+            mask.merge_shadow(True)
+            mask.update(0, 0, w, h)
+            if bool(params.get("apply", False)):
+                layer.remove_mask(Gimp.MaskApplyMode.APPLY)
+        finally:
+            image.undo_group_end()
+            self._flush()
+        return _item_info(layer)
+
+    def op_layer(self, params):
+        action = str(params.get("action") or "info").lower()
+        if action == "new":
+            image = _get_image(params["image_id"])
+            w = int(params.get("width") or image.get_width())
+            h = int(params.get("height") or image.get_height())
+            layer = Gimp.Layer.new(image, str(params.get("name") or "Layer"), w, h, Gimp.ImageType.RGBA_IMAGE, float(params.get("opacity", 100.0)), Gimp.LayerMode.NORMAL)
+            fill = str(params.get("fill") or "transparent").lower()
+            if fill in ("transparent", "none"):
+                layer.fill(Gimp.FillType.TRANSPARENT)
+            else:
+                Gimp.context_push()
+                Gimp.context_set_foreground(_make_color(fill))
+                layer.fill(Gimp.FillType.FOREGROUND)
+                Gimp.context_pop()
+            parent = _get_item(params["parent_id"]) if params.get("parent_id") is not None else None
+            image.insert_layer(layer, parent, int(params.get("position", 0)))
+            if params.get("x") is not None or params.get("y") is not None:
+                layer.set_offsets(int(params.get("x", 0)), int(params.get("y", 0)))
+            self._flush()
+            return _item_info(layer)
+        layer = _get_item(params["layer_id"])
+        image = layer.get_image()
+        image.undo_group_start()
+        try:
+            if action == "info":
+                pass
+            elif action == "delete":
+                image.remove_layer(layer)
+                return {"deleted": int(params["layer_id"])}
+            elif action == "set":
+                if params.get("name") is not None:
+                    layer.set_name(str(params["name"]))
+                if params.get("visible") is not None:
+                    layer.set_visible(bool(params["visible"]))
+                if params.get("opacity") is not None:
+                    layer.set_opacity(float(params["opacity"]))
+                if params.get("mode") is not None:
+                    layer.set_mode(_coerce_enum(params["mode"], Gimp.LayerMode.__gtype__))
+                if params.get("x") is not None or params.get("y") is not None:
+                    ok, ox, oy = layer.get_offsets()
+                    layer.set_offsets(int(params.get("x", ox)), int(params.get("y", oy)))
+                if params.get("lock") is not None:
+                    layer.set_lock_content(bool(params["lock"]))
+            elif action == "move":
+                layer.transform_translate(float(params.get("dx", 0)), float(params.get("dy", 0)))
+            elif action == "reorder":
+                parent = _get_item(params["parent_id"]) if params.get("parent_id") is not None else None
+                image.reorder_item(layer, parent, int(params.get("position", 0)))
+            elif action == "duplicate":
+                copy = layer.copy()
+                image.insert_layer(copy, layer.get_parent(), image.get_item_position(layer))
+                return _item_info(copy)
+            elif action == "merge_down":
+                merged = image.merge_down(layer, _coerce_enum(params.get("merge_type") or "expand-as-necessary", Gimp.MergeType.__gtype__))
+                return _item_info(merged)
+            elif action == "resize_to_image":
+                layer.resize_to_image_size()
+            elif action == "scale":
+                layer.scale(int(params["width"]), int(params["height"]), bool(params.get("local_origin", False)))
+            elif action == "add_alpha":
+                if not layer.has_alpha():
+                    layer.add_alpha()
+            elif action == "crop_to_content":
+                info = self.op_alpha_bbox({"layer_id": layer.get_id()})
+                if not info.get("empty"):
+                    ok, ox, oy = layer.get_offsets()
+                    layer.resize(info["width"], info["height"], -(info["x"] - ox), -(info["y"] - oy))
+            else:
+                raise BridgeError("unknown layer action " + action)
+        finally:
+            image.undo_group_end()
+            self._flush()
+        return _item_info(layer)
+
+    def op_layer_effect(self, params):
+        filt = Gimp.DrawableFilter.get_by_id(int(params["filter_id"]))
+        if filt is None or not filt.is_valid():
+            raise BridgeError("no layer effect with that id")
+        action = str(params.get("action") or "set").lower()
+        if action == "delete":
+            filt.delete()
+            self._flush()
+            return {"deleted": int(params["filter_id"])}
+        if action == "set":
+            if params.get("visible") is not None:
+                filt.set_visible(bool(params["visible"]))
+            if params.get("opacity") is not None:
+                filt.set_opacity(float(params["opacity"]))
+            if params.get("blend_mode"):
+                filt.set_blend_mode(_coerce_enum(params["blend_mode"], Gimp.LayerMode.__gtype__))
+            props = params.get("params") or {}
+            if props:
+                config = filt.get_config()
+                pspecs = list(config.list_properties())
+                names = [p.name for p in pspecs]
+                by_name = {p.name: p for p in pspecs}
+                for key, value in props.items():
+                    m = core.match_key(key, names)
+                    if m is None:
+                        raise BridgeError(f"unknown property {key!r}; valid: {names}")
+                    config.set_property(m, _coerce(value, by_name[m]))
+            filt.update()
+            self._flush()
+            config = filt.get_config()
+            return {
+                "id": filt.get_id(),
+                "op": filt.get_operation_name(),
+                "visible": filt.get_visible(),
+                "opacity": filt.get_opacity(),
+                "params": {p.name: _serialise(config.get_property(p.name)) for p in config.list_properties()},
+            }
+        raise BridgeError("action must be set or delete")
+
+    # Text and paths -------------------------------------------------------------------
+
+    def op_list_fonts(self, params):
+        pattern = str(params.get("filter") or "")
+        fonts = Gimp.fonts_get_list(pattern)
+        names = [f.get_name() for f in fonts]
+        return {"total": len(names), "fonts": names[: int(params.get("limit") or 200)]}
+
+    def _resolve_font(self, name):
+        if not name:
+            return Gimp.context_get_font()
+        font = Gimp.Font.get_by_name(str(name))
+        if font is None:
+            matches = Gimp.fonts_get_list(str(name))
+            if not matches:
+                raise BridgeError(f"no font matches {name!r}; use list_fonts")
+            font = matches[0]
+        return font
+
+    def op_text(self, params):
+        image = _get_image(params["image_id"]) if params.get("image_id") is not None else None
+        layer = None
+        if params.get("layer_id") is not None:
+            layer = _get_item(params["layer_id"])
+            if not isinstance(layer, Gimp.TextLayer):
+                raise BridgeError("layer_id must reference a text layer")
+            image = layer.get_image()
+        if image is None:
+            raise BridgeError("image_id or layer_id is required")
+        image.undo_group_start()
+        try:
+            size = float(params.get("size", 32))
+            if layer is None:
+                font = self._resolve_font(params.get("font"))
+                layer = Gimp.TextLayer.new(image, str(params.get("text") or ""), font, size, Gimp.Unit.pixel())
+                image.insert_layer(layer, None, 0)
+            else:
+                if params.get("text") is not None:
+                    layer.set_text(str(params["text"]))
+                if params.get("font") is not None:
+                    layer.set_font(self._resolve_font(params["font"]))
+                if params.get("size") is not None:
+                    layer.set_font_size(size, Gimp.Unit.pixel())
+            if params.get("color") is not None:
+                layer.set_color(_make_color(params["color"]))
+            if params.get("justify") is not None:
+                layer.set_justification(_coerce_enum(params["justify"], Gimp.TextJustification.__gtype__))
+            if params.get("letter_spacing") is not None:
+                layer.set_letter_spacing(float(params["letter_spacing"]))
+            if params.get("line_spacing") is not None:
+                layer.set_line_spacing(float(params["line_spacing"]))
+            if params.get("box_width") is not None and params.get("box_height") is not None:
+                layer.resize(float(params["box_width"]), float(params["box_height"]))
+            if params.get("x") is not None or params.get("y") is not None:
+                ok, ox, oy = layer.get_offsets()
+                layer.set_offsets(int(params.get("x", ox)), int(params.get("y", oy)))
+            if params.get("name") is not None:
+                layer.set_name(str(params["name"]))
+        finally:
+            image.undo_group_end()
+            self._flush()
+        info = _item_info(layer)
+        info["text"] = layer.get_text()
+        info["font"] = layer.get_font().get_name()
+        return info
+
+    def op_path(self, params):
+        action = str(params.get("action") or "create").lower()
+        if action == "create":
+            image = _get_image(params["image_id"])
+            path = Gimp.Path.new(image, str(params.get("name") or "Path"))
+            image.insert_path(path, None, 0)
+            for stroke in params.get("strokes") or []:
+                pts = stroke.get("points") or []
+                if len(pts) < 2:
+                    raise BridgeError("each stroke needs at least two points")
+                kind = str(stroke.get("type") or "line").lower()
+                sid = path.bezier_stroke_new_moveto(float(pts[0][0]), float(pts[0][1]))
+                if kind == "line":
+                    for x, y in pts[1:]:
+                        path.bezier_stroke_lineto(sid, float(x), float(y))
+                elif kind == "bezier":
+                    # points after the first come in triples: control1, control2, anchor
+                    rest = pts[1:]
+                    if len(rest) % 3:
+                        raise BridgeError("bezier strokes need control1, control2, anchor triples after the first point")
+                    for i in range(0, len(rest), 3):
+                        (c1x, c1y), (c2x, c2y), (ax, ay) = rest[i], rest[i + 1], rest[i + 2]
+                        path.bezier_stroke_cubicto(sid, float(c1x), float(c1y), float(c2x), float(c2y), float(ax), float(ay))
+                else:
+                    raise BridgeError("stroke type must be line or bezier")
+                if stroke.get("closed"):
+                    path.stroke_close(sid)
+            self._flush()
+            return _item_info(path)
+        path = _get_item(params["path_id"])
+        if not isinstance(path, Gimp.Path):
+            raise BridgeError("path_id must reference a path")
+        image = path.get_image()
+        image.undo_group_start()
+        Gimp.context_push()
+        try:
+            if action == "select":
+                op = _coerce_enum(params.get("op") or "replace", Gimp.ChannelOps.__gtype__)
+                image.select_item(op, path)
+            elif action in ("stroke", "fill"):
+                drawable = self._drawable_for(params, image)
+                if params.get("color") is not None:
+                    Gimp.context_set_foreground(_make_color(params["color"]))
+                if action == "stroke":
+                    Gimp.context_set_stroke_method(Gimp.StrokeMethod.LINE)
+                    Gimp.context_set_line_width(float(params.get("width", 2.0)))
+                    Gimp.context_set_line_width_unit(Gimp.Unit.pixel())
+                    Gimp.context_set_antialias(True)
+                    drawable.edit_stroke_item(path)
+                else:
+                    image.select_item(Gimp.ChannelOps.REPLACE, path)
+                    drawable.edit_fill(Gimp.FillType.FOREGROUND)
+                    Gimp.Selection.none(image)
+            elif action == "delete":
+                image.remove_path(path)
+                return {"deleted": int(params["path_id"])}
+            else:
+                raise BridgeError("action must be create, select, stroke, fill or delete")
+        finally:
+            Gimp.context_pop()
+            image.undo_group_end()
+            self._flush()
+        return _item_info(path)
+
+    def op_export_with(self, params):
+        image = _get_image(params["image_id"])
+        path = _export_with(image, params["path"], params.get("options") or {})
+        return {"path": path, "bytes": os.path.getsize(path)}
+
+
+def _export_with(image, path, options=None):
+    """Export via the format's PDB procedure so options like quality or compression can be set."""
+    path = os.path.abspath(os.path.expanduser(str(path)))
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+    ext = os.path.splitext(path)[1].lower().lstrip(".")
+    ext = {"jpg": "jpeg", "tif": "tiff"}.get(ext, ext)
+    proc = Gimp.get_pdb().lookup_procedure(f"file-{ext}-export") if ext else None
+    if proc is None or not options:
+        if not Gimp.file_save(Gimp.RunMode.NONINTERACTIVE, image, Gio.File.new_for_path(path), None):
+            raise BridgeError(f"export failed for {path}")
+        return path
+    config = proc.create_config()
+    pspecs = proc.get_arguments()
+    names = [p.name for p in pspecs]
+    by_name = {p.name: p for p in pspecs}
+    config.set_property("run-mode", Gimp.RunMode.NONINTERACTIVE)
+    config.set_property("image", image)
+    config.set_property("file", Gio.File.new_for_path(path))
+    for key, value in options.items():
+        m = core.match_key(key, names)
+        if m is None or m in ("run-mode", "image", "file", "options"):
+            raise BridgeError(f"unknown export option {key!r} for {ext}; valid: {[n for n in names if n not in ('run-mode', 'image', 'file', 'options')]}")
+        _set_config_property(config, by_name[m], value)
+    values = proc.run(config)
+    status = values.index(0)
+    if status != Gimp.PDBStatusType.SUCCESS:
+        msg = values.index(1) if values.length() > 1 else ""
+        raise BridgeError(f"{proc.get_name()} returned {status.value_nick}: {msg}")
+    return path
 
 
 def _flatten_layers(layers):

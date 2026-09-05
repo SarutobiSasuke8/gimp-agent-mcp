@@ -88,7 +88,7 @@ def cmd_serve(args: argparse.Namespace) -> int:
 def cmd_smoke(args: argparse.Namespace) -> int:
     from .smoke import run_smoke
 
-    return run_smoke(mode=args.mode, keep=args.keep)
+    return run_smoke(mode=args.mode, keep=args.keep, segmentation=args.segmentation)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -109,6 +109,7 @@ def main(argv: list[str] | None = None) -> int:
     p_smoke = sub.add_parser("smoke", help="launch headless GIMP and exercise the whole tool surface")
     p_smoke.add_argument("--mode", choices=("gui", "headless"), default="headless")
     p_smoke.add_argument("--keep", action="store_true", help="leave GIMP running afterwards")
+    p_smoke.add_argument("--segmentation", action="store_true", help="also run the AI cut-out check (downloads a small model on first use)")
 
     args = parser.parse_args(argv)
     command = args.command or "serve"

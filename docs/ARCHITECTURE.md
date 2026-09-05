@@ -28,7 +28,15 @@ Response:
 {"id": "hex", "ok": false, "error": {"type": "BridgeError", "message": "...", "traceback": "..."}}
 ```
 
-Ops: `ping`, `shutdown`, `exec`, `list_images`, `image_info`, `new_image`, `open`, `export`, `close_image`, `render`, `pdb_search`, `pdb_describe`, `pdb_call`, `filter_search`, `filter_describe`, `apply_filter`, `list_filters_on_layer`.
+Ops: `ping`, `shutdown`, `exec`, `list_images`, `image_info`, `new_image`, `open`, `export`, `export_with`, `close_image`, `render`, `layer_png`, `snapshot`, `drop_snapshot`, `render_compare`, `pixel_color`, `alpha_bbox`, `histogram`, `dominant_colors`, `pdb_search`, `pdb_describe`, `pdb_call`, `filter_search`, `filter_describe`, `apply_filter`, `list_filters_on_layer`, `layer_effect`, `select`, `layer_mask`, `set_mask_pixels`, `layer`, `list_fonts`, `text`, `path`.
+
+## Pixels
+
+Measurement ops read pixels straight from the drawable's `GeglBuffer` as `R'G'B'A u8`, optionally at a reduced scale for large layers (`alpha_bbox` caps at four megapixels and reports `approximate: true` when it downsampled). Mask writes go through the drawable's shadow buffer (`get_shadow_buffer` -> `set` -> `merge_shadow` -> `update`), which keeps them undoable.
+
+## Segmentation
+
+`gimp_remove_background` asks the bridge for a full-resolution PNG of one layer (`layer_png`), runs rembg in the server process, and sends the 8-bit mask back as raw bytes (`set_mask_pixels`). The plug-in never imports rembg or PIL, so GIMP's bundled Python stays untouched and the heavy dependency is optional.
 
 Every op runs on the plug-in's main thread. The socket thread packages the request, schedules it with `GLib.idle_add`, and waits on an `Event`. This matters because libgimp is not thread-safe and the plug-in's wire connection to the GIMP core belongs to the main thread.
 

@@ -1,0 +1,37 @@
+name: Release to PyPI
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv sync --extra dev
+      - run: uv run ruff check .
+      - run: uv run pytest
+      - run: uv build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      # Trusted publishing: configure the PyPI project with this repo, workflow "release.yml", environment "pypi".
+      - uses: pypa/gh-action-pypi-publish@release/v1
