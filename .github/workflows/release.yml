@@ -35,3 +35,40 @@ jobs:
           path: dist/
       # Trusted publishing: configure the PyPI project with this repo, workflow "release.yml", environment "pypi".
       - uses: pypa/gh-action-pypi-publish@release/v1
+
+  registry:
+    name: Publish to MCP Registry
+    needs: publish
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write # GitHub OIDC login to the registry; no stored secret
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set version from tag
+        run: |
+          VERSION="${GITHUB_REF#refs/tags/v}"
+          jq --arg v "$VERSION" '.version = $v | .packages[].version = $v' server.json > server.tmp
+          mv server.tmp server.json
+          cat server.json
+      - name: Wait for PyPI to serve the release
+        # The registry verifies PyPI ownership by reading the package description
+        # (README) for the mcp-name marker, so the new version must be visible first.
+        run: |
+          VERSION="${GITHUB_REF#refs/tags/v}"
+          for i in $(seq 1 30); do
+            if curl -fsS "https://pypi.org/pypi/gimp-agent-mcp/$VERSION/json" | grep -q "mcp-name: io.github.SarutobiSasuke8/gimp-agent-mcp"; then
+              echo "PyPI has $VERSION with the mcp-name marker"; exit 0
+            fi
+            echo "waiting for PyPI ($i)"; sleep 10
+          done
+          echo "PyPI never served $VERSION with the mcp-name marker" >&2; exit 1
+      - name: Install mcp-publisher
+        run: |
+          curl -L "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_$(uname -s | tr '[:upper:]' '[:lower:]')_$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/').tar.gz" | tar xz mcp-publisher
+      - name: Validate server.json
+        run: ./mcp-publisher validate
+      - name: Authenticate to MCP Registry
+        run: ./mcp-publisher login github-oidc
+      - name: Publish server to MCP Registry
+        run: ./mcp-publisher publish

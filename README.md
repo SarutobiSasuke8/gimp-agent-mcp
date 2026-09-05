@@ -2,6 +2,8 @@
 
 ![gimp-agent-mcp: the whole of GIMP 3, for AI agents](docs/gimp-agent-mcp-banner.png)
 
+<!-- mcp-name: io.github.SarutobiSasuke8/gimp-agent-mcp -->
+
 An MCP server that hands AI agents the whole of GIMP 3, with the eyes and hands to do detailed work.
 
 Claude, Codex, Cursor and any other Model Context Protocol client can open images, inspect layers, call every one of GIMP's ~1000 Procedure Database functions, apply every GEGL filter destructively or as a non-destructive layer effect, measure pixels instead of guessing, see before/after/diff renders, cut subjects out with an AI segmentation model, draw text and paths, and run tested multi-step recipes over whole folders. Windows-first; macOS and Linux paths are implemented.
@@ -144,4 +146,4 @@ Clean-room implementation under Apache-2.0. The author read the existing GPL and
 
 ## Status
 
-`0.2.3`, beta. Verified end to end on Windows 11 with GIMP 3.2.4. macOS and Linux paths are implemented but not yet exercised on real machines; reports welcome. See `ROADMAP.md`.
+`0.2.4`, beta. Listed in the [official MCP Registry](https://registry.modelcontextprotocol.io) as `io.github.SarutobiSasuke8/gimp-agent-mcp`. Verified end to end on Windows 11 with GIMP 3.2.4. macOS and Linux paths are implemented but not yet exercised on real machines; reports welcome. See `ROADMAP.md`.

@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.2.4] - 2026-09-05
+
+### Added
+
+- Published to the official MCP Registry as `io.github.SarutobiSasuke8/gimp-agent-mcp`. The release workflow now publishes the registry entry after the PyPI upload, authenticating with GitHub OIDC (no secrets), so every `v*` tag updates both.
+- `mcp-name` ownership marker in the README, which PyPI serves as the package description and the registry checks before accepting a PyPI package.
+
+### Changed
+
+- `server.json` moved to the current registry schema (`2025-12-11`): `registryType`/`identifier`, top-level `version`, an explicit `stdio` transport, and a `title`.
+
 ## [0.2.3] - 2026-09-05
 
 ### Added
