@@ -33,7 +33,7 @@ cd gimp-agent-mcp
 uv sync                                # add --extra segmentation for AI cut-outs
 uv run gimp-agent-mcp install-plugin   # copies the bridge plug-in into GIMP's plug-ins folder
 uv run gimp-agent-mcp doctor           # shows what was found
-uv run gimp-agent-mcp smoke            # launches headless GIMP and exercises every tool (22 checks with --segmentation)
+uv run gimp-agent-mcp smoke            # launches headless GIMP and exercises every tool (24 checks with --segmentation)
 ```
 
 Then add the server to your MCP client. For Claude Code, from the repo directory:
@@ -57,10 +57,11 @@ Or in `.mcp.json` / `claude_desktop_config.json` (see `.mcp.json.example`):
 
 The agent calls `gimp_launch` to start GIMP with the bridge running (`mode="gui"` for the normal window, `mode="headless"` for batch work with no UI). If GIMP is already open, click **Filters > Development > Start Agent Bridge** instead. GIMP registers plug-ins at startup, so restart it once after `install-plugin`.
 
-## Tools (32)
+## Tools (33)
 
 | Area | Tools |
 |---|---|
+| Help | `gimp_help` (topics: start, filters, colours, text, masks, paths, layers, measure, recipes, compose, errors) |
 | Session | `gimp_status`, `gimp_launch`, `gimp_shutdown` |
 | Images | `gimp_list_images`, `gimp_image_info`, `gimp_new_image`, `gimp_open`, `gimp_export` (with format options), `gimp_close_image` |
 | Seeing | `gimp_render` (whole image, one layer, or a region), `gimp_snapshot`, `gimp_render_compare` (before / after / diff) |
@@ -85,8 +86,11 @@ Argument conventions: images and items are integer ids; colours are `"#rrggbb"`,
 | `contact_sheet` | Thumbnails of every image in a folder on a labelled grid. |
 | `sprite_sheet_slice` | Cut a sprite sheet into fixed-size tiles, skipping empty ones. |
 | `fit_and_export` | Scale to a maximum edge length and export by extension. |
+| `compose` | Build a card or banner from a layout manifest: background, images, text, rounded rectangles, ellipses, per-item effects. Returns every item's bounding box. |
 
 ![Sticker recipe: padded source on the left, finished 512x512 Telegram sticker on the right](docs/hero.png)
+
+`compose` is the template engine: keep a brand manifest (logo path, fonts, colours, positions) and let the agent fill the text slots. `gimp_help("compose")` has a full example.
 
 Recipes live in `src/gimp_agent_mcp/recipes/`. Each is a module with `DESCRIPTION`, `PARAMS` and `SOURCE`; see `docs/RECIPES.md` to add one.
 
@@ -119,7 +123,7 @@ The plug-in writes `agent-bridge.json` (port, token, pid) into GIMP's per-user c
 ## Testing
 
 - `uv run pytest`: unit tests, no GIMP needed.
-- `uv run gimp-agent-mcp smoke`: 21 live checks against a headless GIMP. Add `--segmentation` to include the AI cut-out (downloads a small model on first use).
+- `uv run gimp-agent-mcp smoke`: 23 live checks against a headless GIMP. Add `--segmentation` to include the AI cut-out (downloads a small model on first use).
 - CI runs lint and unit tests on Ubuntu and Windows, and a second workflow installs real GIMP 3 on a Windows runner and runs the live smoke test on every push.
 
 ## Security
@@ -132,4 +136,4 @@ Clean-room implementation under Apache-2.0. The author read the existing GPL and
 
 ## Status
 
-`0.2.0`, beta. Verified end to end on Windows 11 with GIMP 3.2.4. macOS and Linux paths are implemented but not yet exercised on real machines; reports welcome. See `ROADMAP.md`.
+`0.2.2`, beta. Verified end to end on Windows 11 with GIMP 3.2.4. macOS and Linux paths are implemented but not yet exercised on real machines; reports welcome. See `ROADMAP.md`.

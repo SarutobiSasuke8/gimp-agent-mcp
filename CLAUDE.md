@@ -25,6 +25,16 @@ GIMP_AGENT_LIVE=1 uv run pytest tests/test_live.py
 
 After changing the plug-in you must reinstall it and restart any running bridge; GIMP loads plug-in code at start.
 
+## Testing alongside a live session
+
+The bridge is one port and one token file. If a user session is running, isolate your test run:
+
+```bash
+GIMP_AGENT_PORT=9911 GIMP_AGENT_BRIDGE_FILE="$TEMP/gimp-agent-test.json" uv run gimp-agent-mcp smoke
+```
+
+Both the launcher (which passes its environment to GIMP) and the plug-in honour these variables.
+
 ## GIMP 3.2 API notes
 
 - `Gimp.get_images()`, `image.get_layers()`, `image.get_selected_layers()`; no `gimpfu`.

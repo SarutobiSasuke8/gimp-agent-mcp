@@ -1421,7 +1421,8 @@ def _flatten_layers(layers):
 
 
 def _bridge_file_path():
-    return os.path.join(Gimp.directory(), core.BRIDGE_FILE_NAME)
+    # GIMP_AGENT_BRIDGE_FILE lets a test or a second instance keep its own token file and port.
+    return os.environ.get("GIMP_AGENT_BRIDGE_FILE") or os.path.join(Gimp.directory(), core.BRIDGE_FILE_NAME)
 
 
 def run_bridge(procedure, config, data):

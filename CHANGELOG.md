@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-09-05
+
+### Added
+
+- `gimp_help(topic)`: in-band documentation with worked examples (start, filters, colours, text, masks, paths, layers, measure, recipes, compose, errors). Tools are visible in every client; prompts and resources are not.
+- `compose` recipe: build a card or banner from a layout manifest of images, text, rounded rectangles and ellipses with per-item GEGL effects and anchors. Returns each item's bounding box; `keep_open` leaves the layered image in GIMP for hand edits.
+- Example-rich docstrings on `gimp_apply_filter` and `gimp_pdb_call`.
+- `GIMP_AGENT_BRIDGE_FILE` is honoured by the plug-in too, so a test run can use its own port and token beside a live session.
+
+
 ## [0.2.1] - 2026-09-05
 
 ### Fixed

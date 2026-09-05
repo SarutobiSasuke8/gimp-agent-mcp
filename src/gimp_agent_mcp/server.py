@@ -39,6 +39,8 @@ Working model:
 - Recipes are tested multi-step jobs (gimp_list_recipes). Prefer a recipe over re-deriving the steps.
 - Exports go through gimp_export; the extension selects the format. Save working files as .xcf.
 - If nothing responds, gimp_status tells you whether GIMP is running; gimp_launch starts it.
+- gimp_help(topic) has worked examples for filters, colours, text, masks, paths, layers, measuring, recipes and
+  compose-from-manifest. Call it before improvising.
 """
 
 mcp = MCPServer("gimp-agent-mcp", instructions=INSTRUCTIONS)
@@ -56,6 +58,17 @@ def _call(op: str, params: dict[str, Any] | None = None, timeout: float | None =
         if exc.trace and exc.error_type != "BridgeError":
             detail += "\n" + exc.trace[-1500:]
         raise ToolError(detail) from exc
+
+
+# --------------------------------------------------------------------------- help
+
+
+@mcp.tool()
+def gimp_help(topic: str = "start") -> str:
+    """Read this first. How to work with GIMP through this server, by topic: start, filters, colours, text, masks, paths, layers, measure, recipes, compose, errors, or all."""
+    from . import help as helpdoc
+
+    return helpdoc.get(topic)
 
 
 # --------------------------------------------------------------------------- session
@@ -173,7 +186,7 @@ def gimp_pdb_describe(name: str) -> dict[str, Any]:
 
 @mcp.tool()
 def gimp_pdb_call(name: str, args: dict[str, Any] | None = None, undo_group: bool = True) -> dict[str, Any]:
-    """Call any PDB procedure by name with arguments keyed by name. Pass images/items as ids, colours as strings, enums by nick."""
+    """Call any PDB procedure by name with arguments keyed by name. Pass images/items as ids, colours as strings, enums by nick. Example: name="gimp-image-scale", args={"image": 3, "new-width": 800, "new-height": 600}; name="gimp-image-select-round-rectangle", args={"image": 3, "operation": "replace", "x": 10, "y": 10, "width": 200, "height": 80, "corner-radius-x": 20, "corner-radius-y": 20}. Use gimp_pdb_describe first when unsure."""
     return _call("pdb_call", {"name": name, "args": args or {}, "undo_group": undo_group})
 
 
@@ -202,7 +215,7 @@ def gimp_apply_filter(
     blend_mode: str | None = None,
     name: str | None = None,
 ) -> dict[str, Any]:
-    """Apply a GEGL operation to a layer. mode='merge' bakes it in; mode='append' adds a non-destructive layer effect."""
+    """Apply a GEGL operation to a layer. mode='merge' bakes it in; mode='append' adds a non-destructive layer effect. Examples: white outline = op="gegl:dropshadow", params={"x":0,"y":0,"radius":0,"grow-radius":8,"color":"white"}; soft shadow = {"x":0,"y":6,"radius":12,"opacity":0.4}; blur = op="gegl:gaussian-blur", params={"std-dev-x":4,"std-dev-y":4}. gimp_help("filters") lists the useful ops."""
     return _call(
         "apply_filter",
         {

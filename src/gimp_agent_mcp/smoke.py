@@ -286,6 +286,46 @@ def run_smoke(mode: str = "headless", keep: bool = False, verbose: bool = True, 
 
     check("recipe sprite_sheet_slice", _recipe_slice)
 
+    def _recipe_compose():
+        out_path = str(tmpdir / "card.png")
+        manifest = {
+            "width": 600, "height": 300, "background": "#0f1117",
+            "items": [
+                {"type": "image", "path": png_path, "x": 20, "y": 20, "width": 120, "fit": "contain", "name": "logo"},
+                {"type": "rect", "x": 0, "y": 240, "width": 600, "height": 60, "color": "#1f3a8a", "opacity": 80},
+                {"type": "rect", "x": 400, "y": 40, "width": 160, "height": 48, "color": "#ffffff", "radius": 24, "name": "pill",
+                 "effects": [{"op": "gegl:dropshadow", "params": {"x": 0, "y": 4, "radius": 6, "opacity": 0.5}}]},
+                {"type": "text", "text": "Headline", "size": 40, "color": "#ffffff", "x": 20, "y": 160, "name": "headline"},
+                {"type": "ellipse", "x": 300, "y": 120, "width": 60, "height": 60, "color": "#f6b73c"},
+            ],
+        }
+        out = client.call("exec", {"code": _recipe_code("compose", {"output_path": out_path, "manifest": manifest, "keep_open": True})}, timeout=300)
+        res = out["result"]
+        assert res["width"] == 600 and len(res["items"]) == 5, res
+        names = [i["name"] for i in res["items"]]
+        assert "pill" in names and "headline" in names, names
+        iid = res["image_id"]
+        info = client.call("image_info", {"image_id": iid})
+        assert len(info["layers"]) == 6, [layer["name"] for layer in info["layers"]]
+        c = client.call("pixel_color", {"image_id": iid, "layer_id": [i for i in res["items"] if i["type"] == "ellipse"][0]["layer_id"], "x": 330, "y": 150})
+        assert c["hex"] == "#f6b73c", c
+        bg = client.call("pixel_color", {"layer_id": info["layers"][-1]["id"], "x": 5, "y": 5})
+        assert bg["hex"] == "#0f1117", bg
+        client.call("close_image", {"image_id": iid})
+        assert os.path.getsize(out_path) > 0
+        return {"items": names}
+
+    check("recipe compose (manifest)", _recipe_compose)
+
+    def _help():
+        from . import help as helpdoc
+
+        assert "gimp_render" in helpdoc.get("start") and "grow-radius" in helpdoc.get("filters")
+        assert "Unknown help topic" in helpdoc.get("nope") and len(helpdoc.topics()) >= 10
+        return helpdoc.topics()
+
+    check("help topics", _help)
+
     # 11. segmentation (optional, downloads a model on first use)
     if segmentation:
 
