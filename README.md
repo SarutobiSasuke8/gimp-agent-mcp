@@ -5,6 +5,7 @@
 [![CI](https://github.com/SarutobiSasuke8/gimp-agent-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/SarutobiSasuke8/gimp-agent-mcp/actions/workflows/ci.yml)
 [![Windows GIMP](https://github.com/SarutobiSasuke8/gimp-agent-mcp/actions/workflows/live-windows.yml/badge.svg)](https://github.com/SarutobiSasuke8/gimp-agent-mcp/actions/workflows/live-windows.yml)
 [![Linux GIMP](https://github.com/SarutobiSasuke8/gimp-agent-mcp/actions/workflows/live-linux.yml/badge.svg)](https://github.com/SarutobiSasuke8/gimp-agent-mcp/actions/workflows/live-linux.yml)
+[![macOS GIMP](https://github.com/SarutobiSasuke8/gimp-agent-mcp/actions/workflows/live-macos.yml/badge.svg)](https://github.com/SarutobiSasuke8/gimp-agent-mcp/actions/workflows/live-macos.yml)
 [![PyPI](https://img.shields.io/pypi/v/gimp-agent-mcp)](https://pypi.org/project/gimp-agent-mcp/)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 
@@ -129,7 +130,7 @@ gimp_render(image_id=3, overlay=["grid", "layers", "selection"], grid_size=100,
 
 ## Tested scope and limits
 
-Version **0.4.0**, beta. Windows GIMP **3.2.4** and Linux GIMP **3.2.2** (Ubuntu 26.04) pass the real-GIMP smoke suite and targeted capability proof. macOS remains unverified. GIMP 2.10 is unsupported; earlier 3.x releases are not part of the current test matrix.
+Version **0.4.0**, beta. The current development branch passes the real-GIMP smoke suite and targeted capability proof with Windows GIMP **3.2.4**, Linux GIMP **3.2.2** (Ubuntu 26.04), and macOS 15 GIMP **3.2.4** on Apple Silicon and Intel. The published 0.4.0 package predates the macOS and render-overlay changes. GIMP 2.10 is unsupported; earlier 3.x releases are not part of the current test matrix.
 
 - `gimp_edit_batch` accepts bounded layer, text, selection, path, mask and filter edits. It does not keep a transaction open between separate agent calls or automatically roll back a failed batch. The human uses GIMP's Undo/Redo; there is no invented programmatic undo endpoint.
 - Some GEGL source operations, including linear gradients, are not drawable filters. Use the PDB gradient-fill procedure instead. Vector warp/liquify parity is not claimed.
@@ -145,7 +146,7 @@ uv run pytest
 uv run python scripts/capability_proof.py /path/to/proof-output
 ```
 
-CI checks Linux and Windows Python, and separate jobs exercise real GIMP. Release publication depends on both real-GIMP workflows passing. The capability proof measures curves, gradients and brush output and checks batch recovery, document boundaries, nested previews and snapshot cleanup. It is targeted regression evidence, not exhaustive competitor parity. See [validation details](docs/VALIDATION.md).
+CI checks supported Python versions, and separate jobs exercise real GIMP on Windows, Linux and both macOS architectures. Release publication depends on all three real-GIMP workflows passing. The capability proof measures curves, gradients and brush output and checks batch recovery, document boundaries, diagnostic overlays, nested previews and snapshot cleanup. It is targeted regression evidence, not exhaustive competitor parity. See [validation details](docs/VALIDATION.md).
 
 ## Architecture and trust
 

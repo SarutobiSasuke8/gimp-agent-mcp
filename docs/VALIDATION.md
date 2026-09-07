@@ -21,6 +21,14 @@ The normal smoke covers images, discovery, filters, colour/bounds measurements, 
 
 The README GIF and MP4 are a labelled sequence of captured GIMP window states, with pauses shortened. They are not an uncut recording of model deliberation. Their assets are original procedural GIMP text and shapes.
 
+## Platform matrix
+
+- Windows: GIMP 3.2.4 on the GitHub-hosted Windows runner.
+- Linux: GIMP 3.2.2 from Ubuntu 26.04, inside Xvfb and a D-Bus session.
+- macOS: GIMP 3.2.4 installed from the Homebrew cask on macOS 15 Apple Silicon and Intel runners. Both architectures run the headless smoke and targeted capability proof against isolated profiles.
+
+Release publication waits for all three platform workflows. These automated checks establish headless plug-in discovery, bridge communication and operations. A hosted runner does not replace a manual check of visible window focus or native keyboard shortcuts.
+
 ## Comparison scope
 
 Both this project and maorcc/gimp-mcp support visual feedback and visible editing. Our dedicated operations and generic PDB/GEGL routes overlap many of that project's tools, but a tool count is not a quality measure or a proof of parameter parity.

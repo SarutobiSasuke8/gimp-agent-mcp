@@ -12,8 +12,10 @@ jobs:
     uses: ./.github/workflows/live-windows.yml
   live-linux:
     uses: ./.github/workflows/live-linux.yml
+  live-macos:
+    uses: ./.github/workflows/live-macos.yml
   build:
-    needs: [live-windows, live-linux]
+    needs: [live-windows, live-linux, live-macos]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
