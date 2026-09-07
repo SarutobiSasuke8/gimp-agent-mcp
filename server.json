@@ -2,8 +2,8 @@
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.SarutobiSasuke8/gimp-agent-mcp",
   "title": "GIMP Agent MCP",
-  "description": "GIMP 3 for AI agents: every PDB procedure and GEGL filter, renders, pixel measurement, recipes.",
-  "version": "0.2.4",
+  "description": "Editable GIMP 3 workflows for AI agents: live previews, grouped edits, pixel measurement and recipes.",
+  "version": "0.4.0",
   "websiteUrl": "https://pypi.org/project/gimp-agent-mcp/",
   "repository": {
     "url": "https://github.com/SarutobiSasuke8/gimp-agent-mcp",
@@ -13,7 +13,7 @@
     {
       "registryType": "pypi",
       "identifier": "gimp-agent-mcp",
-      "version": "0.2.4",
+      "version": "0.4.0",
       "runtimeHint": "uvx",
       "transport": {
         "type": "stdio"

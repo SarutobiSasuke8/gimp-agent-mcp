@@ -28,7 +28,7 @@ Response:
 {"id": "hex", "ok": false, "error": {"type": "BridgeError", "message": "...", "traceback": "..."}}
 ```
 
-Ops: `ping`, `shutdown`, `exec`, `list_images`, `image_info`, `new_image`, `open`, `export`, `export_with`, `close_image`, `render`, `layer_png`, `snapshot`, `drop_snapshot`, `render_compare`, `pixel_color`, `alpha_bbox`, `histogram`, `dominant_colors`, `pdb_search`, `pdb_describe`, `pdb_call`, `filter_search`, `filter_describe`, `apply_filter`, `list_filters_on_layer`, `layer_effect`, `select`, `layer_mask`, `set_mask_pixels`, `layer`, `list_fonts`, `text`, `path`.
+Ops: `context`, `edit_batch`, `ping`, `shutdown`, `exec`, `list_images`, `image_info`, `new_image`, `open`, `export`, `export_with`, `close_image`, `render`, `layer_png`, `snapshot`, `drop_snapshot`, `render_compare`, `pixel_color`, `alpha_bbox`, `histogram`, `dominant_colors`, `pdb_search`, `pdb_describe`, `pdb_call`, `filter_search`, `filter_describe`, `apply_filter`, `list_filters_on_layer`, `layer_effect`, `select`, `layer_mask`, `set_mask_pixels`, `layer`, `list_fonts`, `text`, `path`.
 
 ## Pixels
 
@@ -73,3 +73,25 @@ Names are matched with dashes and underscores interchangeable. Unknown argument 
 ## Recipes
 
 A recipe module declares `PARAMS` and `SOURCE`. The server resolves defaults, validates unknown keys, prepends `params = {...}` and sends the whole thing to `exec`. The bridge namespace already contains `Gimp`, `Gegl`, `Gio`, `GLib`, `GObject`, `image_by_id`, `item_by_id` and `make_color`. The recipe assigns `result`, which comes back serialised.
+
+
+### Verified grid-packing recipe
+
+`sprite_sheet_pack` uses the existing recipe/exec contract; it adds no MCP tool or bridge protocol. The server validates declared parameter types and numeric minimums, then GIMP imports ordered equal-size PNG frames, measures decoded RGBA pixels, places named layers, exports and reopens the PNG for exact comparison. Only a successful comparison proceeds to the layered XCF and atlas JSON. The recipe deletes temporary images on success and failure, retaining the sheet only for a successful `keep_open` request. Source paths stay out of the atlas JSON.
+
+
+## 0.4 grouped editing and recovery
+
+`edit_batch` accepts only the shared `EDIT_OPS` allowlist and 1..100 steps. Each step uses an existing bridge operation; `image_id` is fixed for the batch and all referenced items must belong to it. `{ "$ref": "0.id" }` resolves an earlier result without evaluating code. A single outer undo group surrounds the work and closes in `finally`. Failed steps stop execution and return the completed results plus an error index; partial edits remain for inspection and one GUI undo. No group stays open between requests. File operations, arbitrary Python and generic PDB dispatch are excluded from the bounded batch.
+
+The client never automatically replays a request after dispatch. A missing or mismatched response means the outcome is unknown, not that the edit failed to happen. It closes the connection and tells the caller to reconnect and inspect before retrying.
+
+`context` reports selected layers and bounds for an explicit image; it can select layers or present a GUI document. It reports ambiguity for multiple documents rather than pretending to know keyboard focus. Colour/brush values describe the plug-in's context, which is not a continuous mirror of the user's toolbox.
+
+GimpDoubleArray and GimpInt32Array use a GObject.Value and the appropriate GIMP boxed-array setter. GEGL paths accept a path string. Availability of these conversions does not mean every procedure or graph topology is supported.
+
+Snapshots are private comparison images: excluded from document lists, limited to 16, explicitly releasable and deleted when the bridge closes. Layer rendering preserves required group ancestors. Comparison flattening merges visible content onto a transparent full-canvas layer, avoiding selection of a hidden top layer.
+
+For POSIX launches, the GIMP executable's directory precedes uv's virtualenv on PATH; PYTHONHOME/PYTHONPATH/VIRTUAL_ENV are removed from the child environment. GIMP's own plug-ins can therefore use the Python GI runtime that belongs to its installation. Windows uses the packaged GIMP runtime unchanged. Headless launches also use --new-instance.
+
+The server-side BridgeClient uses a reentrant lock to serialize parallel MCP calls over its single socket, including reconnects. This does not introduce any threads in the GIMP plug-in. A zero-byte send closes a dead peer rather than spinning forever.

@@ -1,34 +1,26 @@
 # Roadmap
 
-Work items live as [GitHub issues](https://github.com/SarutobiSasuke8/gimp-agent-mcp/issues). This file is the shape of the thing; the issues are the detail.
+## Released through 0.3.0
 
-## Shipped
+Live image/region previews, pixel measurements, before/after/diff renders, selections, masks, layers, text, paths, editable effects, optional AI cut-outs, eight recipes, bundled Claude Code/Codex skills, PyPI and MCP Registry distribution. Real Windows GIMP CI.
 
-**0.2** Detailed work: measurement, before/after/diff renders, selection and masks, text, paths, effect editing, AI cut-outs, recipes, live Windows CI against a real GIMP install. sRGB colour correctness. A thread-free bridge on GLib IO watches, so several clients can hold connections and the plug-in stops crashing under load. Working inside the user's own GIMP window, with a desktop launcher.
+## 0.4.0
 
-**0.3** `gimp_help` so an agent can learn the tool from inside it. `compose`, a layout-manifest recipe for cards and banners. Sprite-sheet packing and slicing with measured bounds. Bundled Claude Code and Codex skills, a plugin marketplace entry, PyPI and the official MCP Registry.
+- Grouped edits: a bounded supported batch becomes one Ctrl+Z step. Partial failures are reported and the group always closes. No transaction remains open between calls.
+- Explicit document context, selected-layer control and GUI presentation. Multiple documents require an image ID; focus is not guessed.
+- Numeric-array PDB arguments for curves and brush strokes, with measured runtime tests.
+- Nested-layer and hidden-layer comparison fixes; explicit snapshot release and a retention limit.
+- No silent replay after an uncertain network outcome.
+- Verified equal-canvas sprite packing, XCF and atlas output, and stricter recipe validation.
+- Real Linux GIMP CI, release gates for both platforms, and a launch-environment fix for uv/Python GI interference.
+- Demo, examples and release metadata consistency.
 
-## Next
+## Next useful work
 
-- [#1](https://github.com/SarutobiSasuke8/gimp-agent-mcp/issues/1) Undo grouping, so one Ctrl+Z reverts a whole agent turn. The biggest quality-of-life gap when the agent works in a window you are also using.
-- [#2](https://github.com/SarutobiSasuke8/gimp-agent-mcp/issues/2) Linux live CI with a real GIMP 3, so cross-platform support is a tested claim rather than written code.
+1. [Render overlays](https://github.com/SarutobiSasuke8/gimp-agent-mcp/issues/3): coordinates, layer boxes and selection bounds, without changing source artwork.
+2. [Cancellation and progress](https://github.com/SarutobiSasuke8/gimp-agent-mcp/issues/5): cancellable stages for batch jobs; distinguish this from interrupting an in-flight GIMP filter.
+3. [Brand kits](https://github.com/SarutobiSasuke8/gimp-agent-mcp/issues/4): named fonts, colours and layout defaults for compose, with missing-token validation.
+4. Broader sprite inputs and padding; focus-aware social crops; a separately validated warp workflow.
+5. macOS validation and fresh-install reports from users.
 
-## After that
-
-- [#3](https://github.com/SarutobiSasuke8/gimp-agent-mcp/issues/3) Render overlay mode: selection, layer boxes and coordinates drawn on the render, so the agent sees positions instead of computing them.
-- [#6](https://github.com/SarutobiSasuke8/gimp-agent-mcp/issues/6) Report the user's active image, layer and selection, so "this layer" works.
-- [#4](https://github.com/SarutobiSasuke8/gimp-agent-mcp/issues/4) Brand kits: named colour, font and canvas profiles referenced from a `compose` manifest.
-- [#5](https://github.com/SarutobiSasuke8/gimp-agent-mcp/issues/5) Cancellation and progress for long operations.
-- [#7](https://github.com/SarutobiSasuke8/gimp-agent-mcp/issues/7) A demo recording of an agent editing a live GIMP window.
-- macOS verification. `macos-latest` runners carry no GIMP and the cask install is slow, so this is likely a manual report rather than CI.
-- Reorder layer effects; move layers between groups.
-- Guided masks: refine a segmentation mask with GEGL feather, shrink and matting in one call.
-- More recipes: colour-grade presets, sticker packs against Telegram and WhatsApp specs, social crops from one source.
-- Recipe parameters exposed as JSON Schema so clients can render forms.
-
-## Later
-
-- Streamable HTTP transport behind an opt-in flag, still loopback-only by default.
-- Script-Fu bridge for the remaining `.scm` procedures with no Python equivalent.
-- Optional Windows service or launch agent so the bridge starts with GIMP.
-- A write-up on generic runtime introspection versus hand-written tool wrappers.
+These are follow-ups, not claims in the launch copy. Keep runtime checks and editable output ahead of adding convenience wrappers for their own sake. Work items remain in [GitHub issues](https://github.com/SarutobiSasuke8/gimp-agent-mcp/issues).

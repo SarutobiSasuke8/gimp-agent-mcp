@@ -625,7 +625,7 @@ class Bridge:
         }
 
     def op_list_images(self, params):
-        return [_image_summary(img) for img in Gimp.get_images()]
+        return [_image_summary(img) for img in Gimp.get_images() if img.get_id() not in self.snapshots]
 
     def op_image_info(self, params):
         return _image_info(_get_image(params["image_id"]))
@@ -680,8 +680,10 @@ class Bridge:
 
     def op_render(self, params):
         image = _get_image(params["image_id"]) if params.get("image_id") is not None else None
+        if image is None and params.get("layer_id") is not None:
+            image = _get_item(params["layer_id"]).get_image()
         if image is None:
-            images = Gimp.get_images()
+            images = [img for img in Gimp.get_images() if img.get_id() not in self.snapshots]
             if not images:
                 raise BridgeError("no open images to render")
             if len(images) != 1:
@@ -1542,6 +1544,8 @@ class ClientConnection:
                     raise OSError("client stopped reading; send timed out") from None
                 time.sleep(0.002)
                 continue
+            if sent == 0:
+                raise OSError("client closed while the bridge was sending")
             view = view[sent:]
 
     def _on_event(self, _channel, condition):

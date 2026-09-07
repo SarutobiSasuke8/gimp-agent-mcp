@@ -1,177 +1,149 @@
-# gimp-agent-mcp
+# GIMP Agent MCP
 
-![gimp-agent-mcp: the whole of GIMP 3, for AI agents](docs/gimp-agent-mcp-banner.png)
+**Let your AI agent edit in GIMP. Keep the layers. See what changed.**
+
+[![CI](https://github.com/SarutobiSasuke8/gimp-agent-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/SarutobiSasuke8/gimp-agent-mcp/actions/workflows/ci.yml)
+[![Windows GIMP](https://github.com/SarutobiSasuke8/gimp-agent-mcp/actions/workflows/live-windows.yml/badge.svg)](https://github.com/SarutobiSasuke8/gimp-agent-mcp/actions/workflows/live-windows.yml)
+[![Linux GIMP](https://github.com/SarutobiSasuke8/gimp-agent-mcp/actions/workflows/live-linux.yml/badge.svg)](https://github.com/SarutobiSasuke8/gimp-agent-mcp/actions/workflows/live-linux.yml)
+[![PyPI](https://img.shields.io/pypi/v/gimp-agent-mcp)](https://pypi.org/project/gimp-agent-mcp/)
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 
 <!-- mcp-name: io.github.SarutobiSasuke8/gimp-agent-mcp -->
 
-An MCP server that hands AI agents the whole of GIMP 3, with the eyes and hands to do detailed work.
+Connect Claude, Codex, Cursor or another MCP client to GIMP 3. The agent can work in your open window, inspect the result, refine an edit and save an XCF you can keep working on. Headless mode runs the same workflows over folders of images.
 
-Claude, Codex, Cursor and any other Model Context Protocol client can open images, inspect layers, call every one of GIMP's ~1000 Procedure Database functions, apply every GEGL filter destructively or as a non-destructive layer effect, measure pixels instead of guessing, see before/after/diff renders, cut subjects out with an AI segmentation model, draw text and paths, and run tested multi-step recipes over whole folders. Windows-first; macOS and Linux paths are implemented.
+## See it working
 
+![GIMP walkthrough: original, three MCP text edits, one Ctrl+Z, redo](docs/gimp-demo.gif)
 
-## Why this exists
+[Watch the 20-second MP4](https://github.com/SarutobiSasuke8/gimp-agent-mcp/raw/main/docs/gimp-demo.mp4) · [Open the editable XCF](docs/layered-demo.xcf) · [Reproduce the MCP session](scripts/gui_demo.py)
 
-GIMP 3 has a complete Python API through GObject Introspection. Earlier GIMP MCP servers wrapped a few dozen calls by hand, used Unix sockets that do not exist on Windows Python, and gave the agent no way to see or measure what it had just done. This server takes the opposite approach:
+This is a captured-step walkthrough of the real GIMP window, with pauses shortened. Three text layers are changed through MCP in one batch. One Ctrl+Z restores all three; Ctrl+Y brings them back. The text, artwork and background stay on separate named layers. This demonstrates actual tool execution, not a claim that every model will follow the same plan from a prompt.
 
-- **Generic, introspected access.** `gimp_pdb_search` -> `gimp_pdb_describe` -> `gimp_pdb_call` reaches any procedure with typed argument descriptions, enum choices and defaults pulled from GIMP at runtime. No hand-written wrapper goes stale when GIMP updates.
-- **Every GEGL filter.** 200+ operations behind GIMP's Filters menu, with `mode="append"` for GIMP 3's non-destructive layer effects and `gimp_layer_effect` to edit them afterwards.
-- **Sight and measurement.** `gimp_render` returns a PNG of the current state. `gimp_measure` reads the colour at a pixel, the bounding box of visible pixels, histograms and dominant colours. `gimp_snapshot` + `gimp_render_compare` show before, after and a pixel diff side by side.
-- **Detailed work.** Selection in one tool (rect, ellipse, by colour, by alpha, from path, grow/shrink/feather), layer masks including raw mask pixels, text layers with fonts, vector paths that can be stroked, filled or turned into selections, and layer management.
-- **AI cut-outs.** `gimp_remove_background` runs a segmentation model (rembg, optional extra) and writes the result as an editable layer mask or bakes it into alpha.
-- **Recipes.** Repeatable jobs written once as Python that runs inside GIMP, with declared parameters, defaults and validation. Seven ship; `gimp_batch_recipe` runs one over a glob.
-- **Windows-first transport.** TCP on `127.0.0.1` with a per-install token, because CPython on Windows has no `AF_UNIX`.
-- **Escape hatch.** `gimp_run_python` executes Python inside GIMP with a persistent namespace. One environment variable disables it.
+## Try asking
 
-## Requirements
+> “Change the headline and supporting text in this card. Keep them as text layers, group the edits into one undo step, and show me the result before exporting.”
 
-- GIMP 3.0 or newer (tested on 3.2.4). GIMP 2.10 will not work: it has no Python 3 API.
-- Python 3.11+ and [uv](https://docs.astral.sh/uv/) on the machine that runs the MCP client.
+> “Make this transparent artwork into a Telegram sticker with a white outline and shadow. Save a 512 × 512 PNG.”
 
-## Quick start
+> “Pack these equal-sized PNG frames into a sprite sheet. Keep an XCF master, write the atlas JSON and verify the exported pixels against the originals.”
 
-```bash
-git clone https://github.com/SarutobiSasuke8/gimp-agent-mcp.git
-cd gimp-agent-mcp
-uv sync                                # add --extra segmentation for AI cut-outs
-uv run gimp-agent-mcp install-plugin   # copies the bridge plug-in into GIMP's plug-ins folder
-uv run gimp-agent-mcp install-skills   # copies the bundled skills into Claude Code and Codex
-uv run gimp-agent-mcp doctor           # shows what was found
-uv run gimp-agent-mcp smoke            # launches headless GIMP and exercises every tool (24 checks with --segmentation)
-```
+![Sticker recipe: source and finished sticker](docs/hero.png)
 
-Then add the server to your MCP client. For Claude Code, the plugin installs the server and the skills together:
+The included skills guide layered artwork, sprite sheets and batch jobs. They tell the agent to inspect and measure the actual output before calling a job complete.
+
+## Install
+
+You need **GIMP 3.2.x**, **Python 3.11+**, [uv](https://docs.astral.sh/uv/) and an MCP client. GIMP must be installed on the same machine as the server. Start GIMP once so its user profile exists.
 
 ```bash
-/plugin marketplace add SarutobiSasuke8/gimp-agent-mcp
-/plugin install gimp-agent-mcp
+uvx gimp-agent-mcp install-plugin
+uvx gimp-agent-mcp install-skills
+uvx gimp-agent-mcp doctor
 ```
 
-Or add the server on its own, from the repo directory:
+Restart GIMP after installing or upgrading the bridge. In your open GIMP window, choose **Filters → Development → Start Agent Bridge**.
 
-```bash
-claude mcp add gimp -- uv run --no-sync --directory "$(pwd)" gimp-agent-mcp serve
-```
-
-Or in `.mcp.json` / `claude_desktop_config.json` (see `.mcp.json.example`):
+Add this configuration to your client's MCP settings:
 
 ```json
 {
   "mcpServers": {
     "gimp": {
-      "command": "uv",
-      "args": ["run", "--no-sync", "--directory", "/absolute/path/to/gimp-agent-mcp", "gimp-agent-mcp", "serve"]
+      "command": "uvx",
+      "args": ["gimp-agent-mcp", "serve"]
     }
   }
 }
 ```
 
-`--no-sync` matters. Without it `uv` re-syncs the virtualenv on every launch, which fails on Windows with `os error 32` whenever an earlier server process still holds `.venv\Scripts\gimp-agent-mcp.exe`, and the client reports only `CONNECTION_CLOSED`.
+For Claude Code:
 
-## Working in your own GIMP window
+```bash
+claude mcp add gimp -- uvx gimp-agent-mcp serve
+```
 
-The agent works inside the GIMP you are using. Three ways to connect it:
+Claude Code can also install the server and skills as a plugin; see [skills installation](docs/SKILLS.md). For AI background removal, install the optional model runtime with `uvx --from "gimp-agent-mcp[segmentation]" gimp-agent-mcp serve` (use the same arguments in your MCP config). The first use downloads a model; image processing stays local.
 
-- **Menu:** in an open GIMP, click **Filters > Development > Start Agent Bridge**. Every agent edit lands in your layer stack as an undoable step; keep editing by hand alongside it.
-- **Shortcut:** `uv run gimp-agent-mcp shortcut` creates a "GIMP 3 (agent bridge)" launcher on your Desktop (a script in `~/.local/bin` on macOS/Linux). Start GIMP from it and the bridge is already on; no menu click.
-- **Agent-driven:** `gimp_launch(mode="gui")` opens a window with the bridge running; `mode="headless"` runs `gimp-console` with no UI for batch work.
+**Working from source?** Run `uv sync --extra dev`, then `uv run gimp-agent-mcp install-plugin`. Configure the server as `uv run --no-sync --directory /absolute/path/to/repo gimp-agent-mcp serve`. `--no-sync` avoids Windows executable-lock errors when another server is running.
 
-If two bridges are alive (a headless batch job and your window, say), the newer one takes the next free port and agents follow it. GIMP registers plug-ins at startup, so restart it once after `install-plugin`.
+## Work in your window, or run a batch
 
-## Tools (33)
+- **Your existing window:** start the bridge from the menu. Continue editing the same document by hand.
+- **A shortcut:** `uvx gimp-agent-mcp shortcut` creates a launcher that starts GIMP with the bridge enabled.
+- **Agent-launched:** `gimp_launch(mode="gui")` opens GIMP; `mode="headless"` runs without a window.
+
+Use `gimp_context(image_id)` to read selected layers and selection bounds. With several images open, the agent must choose an explicit image ID; GIMP's public API does not reliably expose which document has keyboard focus. `gimp_context(..., present=true)` can bring a specified document forward. If multiple bridges run, `gimp_status` follows the newest bridge file; isolate test profiles when a user session is active.
+
+## What makes this useful
+
+| Capability | What you get |
+|---|---|
+| Visual feedback | Whole-image, layer and region previews; saved snapshots; before/after/diff comparisons. Nested-layer previews preserve the parent visibility needed to see the layer. |
+| Measured output | Pixel colours, alpha bounds, histograms and dominant colours. Sprite packing reopens the exported PNG and compares each cell's decoded RGBA pixels with its source. |
+| Editable work | Named layers, text, paths, masks and non-destructive layer effects. Export an XCF master and delivery files separately. |
+| One undo step | `gimp_edit_batch` groups supported edits on one image into one Ctrl+Z step. A failed step stops the batch, reports partial results and closes the group. |
+| Runtime discovery | Search and describe the installed PDB procedures and GEGL operations, including parameter names, types and enum values. Numeric-array arguments support curves and brush strokes. |
+| Repeatable jobs | Nine recipes and folder batching, plus three bundled workflow skills. |
+| Honest failure handling | A lost connection never silently replays an edit whose outcome is unknown. Reconnect, inspect, then decide whether to retry. |
+
+Other GIMP MCP projects also provide TCP bridges and visual feedback. This project's emphasis is editable output, measurement, grouped edits and reproducible validation. Generic API access is broad, but does not guarantee that every GIMP procedure or GEGL operation works with every argument combination.
+
+## Tools (36)
 
 | Area | Tools |
 |---|---|
-| Help | `gimp_help` (topics: start, filters, colours, text, masks, paths, layers, measure, recipes, compose, errors) |
-| Session | `gimp_status`, `gimp_launch`, `gimp_shutdown` |
-| Images | `gimp_list_images`, `gimp_image_info`, `gimp_new_image`, `gimp_open`, `gimp_export` (with format options), `gimp_close_image` |
-| Seeing | `gimp_render` (whole image, one layer, or a region), `gimp_snapshot`, `gimp_render_compare` (before / after / diff) |
-| Measuring | `gimp_measure` (`color` at a point, `bbox` of visible pixels, `histogram`, `dominant` colours) |
+| Learn and connect | `gimp_help`, `gimp_status`, `gimp_launch`, `gimp_shutdown`, `gimp_context` |
+| Images | `gimp_list_images`, `gimp_image_info`, `gimp_new_image`, `gimp_open`, `gimp_export`, `gimp_close_image` |
+| See and measure | `gimp_render`, `gimp_snapshot`, `gimp_drop_snapshot`, `gimp_render_compare`, `gimp_measure` |
 | PDB | `gimp_pdb_search`, `gimp_pdb_describe`, `gimp_pdb_call` |
-| Filters | `gimp_filter_search`, `gimp_filter_describe`, `gimp_apply_filter` (merge or append), `gimp_layer_effects`, `gimp_layer_effect` (edit or delete) |
-| Detail work | `gimp_select`, `gimp_layer_mask`, `gimp_layer`, `gimp_text`, `gimp_list_fonts`, `gimp_path` |
-| AI | `gimp_remove_background` (mask or apply; models u2net, isnet-general-use, u2net_human_seg, isnet-anime, silueta) |
-| Code | `gimp_run_python` (disable with `GIMP_AGENT_ALLOW_PYTHON=0`) |
-| Recipes | `gimp_list_recipes`, `gimp_run_recipe`, `gimp_batch_recipe` |
+| Filters | `gimp_filter_search`, `gimp_filter_describe`, `gimp_apply_filter`, `gimp_layer_effects`, `gimp_layer_effect` |
+| Edit | `gimp_edit_batch`, `gimp_select`, `gimp_layer_mask`, `gimp_layer`, `gimp_text`, `gimp_list_fonts`, `gimp_path` |
+| Cut out | `gimp_remove_background` (optional rembg model runtime) |
+| Automate | `gimp_run_python`, `gimp_list_recipes`, `gimp_run_recipe`, `gimp_batch_recipe` |
 
-Argument conventions: images and items are integer ids; colours are `"#rrggbb"`, `"white"`, `"rgb(255,0,0)"` or `[r,g,b,a]`; enums are nicks like `"clip-to-image"` and unknown values return the valid list; dashes and underscores in names are interchangeable. `run-mode` defaults to non-interactive.
+Images and items use integer IDs. Colours accept hex, common names, CSS RGB strings or component arrays; enums use nicks returned by the describe tools. Call `gimp_help("batch")` for grouped-edit examples. `gimp_run_python` may be disabled, reducing the tool count by one.
 
 ## Recipes
 
-| Recipe | Purpose |
+| Recipe | Job |
 |---|---|
-| `telegram_sticker` | Fit artwork into a 512x512 transparent canvas, add a white outline and a soft shadow, export PNG. |
-| `web_optimise` | Scale to a maximum edge and export WebP/JPEG/PNG, lowering quality until the file fits a KB budget. |
-| `icon_set` | Export a square source at every size in a list (favicon, app icons, PWA icons). |
-| `watermark` | Overlay a text or image watermark in a corner or centre with opacity. |
-| `contact_sheet` | Thumbnails of every image in a folder on a labelled grid. |
-| `sprite_sheet_slice` | Cut a sprite sheet into fixed-size tiles, skipping empty ones. |
-| `fit_and_export` | Scale to a maximum edge length and export by extension. |
-| `compose` | Build a card or banner from a layout manifest: background, images, text, rounded rectangles, ellipses, per-item effects. Returns every item's bounding box. |
+| `telegram_sticker` | Fit, outline and shadow on a transparent 512 × 512 canvas. |
+| `compose` | Cards and banners from a manifest of images, text, shapes and effects. |
+| `sprite_sheet_pack` | Ordered, equal-sized PNGs → verified grid PNG, layered XCF and atlas JSON. |
+| `sprite_sheet_slice` | Fixed-size tiles from a sheet, optionally skipping empty cells. |
+| `web_optimise` | Resize and adjust export quality toward a file-size budget. |
+| `icon_set` | Export a square source at multiple sizes. |
+| `watermark` | Position a text or image watermark. |
+| `contact_sheet` | Labelled thumbnails from a folder. |
+| `fit_and_export` | Fit to a maximum edge and export by extension. |
 
-![Sticker recipe: padded source on the left, finished 512x512 Telegram sticker on the right](docs/hero.png)
+[Recipe arguments and examples](docs/RECIPES.md) · [Skills](docs/SKILLS.md)
 
-`compose` is the template engine: keep a brand manifest (logo path, fonts, colours, positions) and let the agent fill the text slots. `gimp_help("compose")` has a full example.
+## Tested scope and limits
 
-Recipes live in `src/gimp_agent_mcp/recipes/`. Each is a module with `DESCRIPTION`, `PARAMS` and `SOURCE`; see `docs/RECIPES.md` to add one.
+Version **0.4.0**, beta. Windows GIMP **3.2.4** and Linux GIMP **3.2.2** (Ubuntu 26.04) pass the real-GIMP smoke suite and targeted capability proof. macOS remains unverified. GIMP 2.10 is unsupported; earlier 3.x releases are not part of the current test matrix.
 
-## Skills
+- `gimp_edit_batch` accepts bounded layer, text, selection, path, mask and filter edits. It does not keep a transaction open between separate agent calls or automatically roll back a failed batch. The human uses GIMP's Undo/Redo; there is no invented programmatic undo endpoint.
+- Some GEGL source operations, including linear gradients, are not drawable filters. Use the PDB gradient-fill procedure instead. Vector warp/liquify parity is not claimed.
+- Sprite packing currently takes equal-sized PNG files, without padding or direct open-layer input. It does not align animation or pack mixed-size rectangles.
+- Long filters are synchronous. Mid-filter cancellation, progress reporting and render overlays remain follow-up work.
 
-Tools tell an agent what it *can* do. Skills tell it how a particular job is done well, and what it may not claim without evidence. Three ship in `skills/`, as client-agnostic `SKILL.md` directories that Claude Code and Codex both read:
-
-| Skill | The job it owns |
-|---|---|
-| `gimp-sprite-sheets` | Pack, slice and verify sprite sheets and atlases. Every crop rectangle measured with `gimp_measure`, and the exported sheet re-measured cell by cell before it is called correct |
-| `gimp-layered-assets` | Component-first layered composition: an XCF master, editable text and effects, delivery formats exported separately |
-| `gimp-batch-jobs` | Recipes across a folder, including reading the per-file result list and spot-checking by measurement rather than by thumbnail |
+## Verify your setup
 
 ```bash
-gimp-agent-mcp install-skills                          # every client directory found
-gimp-agent-mcp install-skills --client codex           # ~/.codex/skills
-gimp-agent-mcp install-skills --dir ./.claude/skills   # project scope
+uvx gimp-agent-mcp smoke
+# From the source checkout:
+uv run pytest
+uv run python scripts/capability_proof.py /path/to/proof-output
 ```
 
-Existing skill directories are skipped rather than overwritten. Full details, including the Codex `agents/openai.yaml` descriptors and guidance for writing your own, in [docs/SKILLS.md](docs/SKILLS.md).
+CI checks Linux and Windows Python, and separate jobs exercise real GIMP. Release publication depends on both real-GIMP workflows passing. The capability proof measures curves, gradients and brush output and checks batch recovery, document boundaries, nested previews and snapshot cleanup. It is targeted regression evidence, not exhaustive competitor parity. See [validation details](docs/VALIDATION.md).
 
-## A detailed-work session, end to end
+## Architecture and trust
 
-```text
-gimp_open("photo.jpg")                                  -> image 1, layer 2
-gimp_snapshot(1)                                        -> snapshot 3
-gimp_remove_background(layer_id=2, mode="mask")         -> editable mask, subject bbox
-gimp_select(1, mode="alpha", layer_id=2); gimp_select(1, mode="shrink", amount=2)
-gimp_layer(action="new", image_id=1, fill="#f4f1ea", position=1)
-gimp_apply_filter(2, "gegl:dropshadow", {"x": 0, "y": 6, "radius": 12, "opacity": 0.35}, mode="append")
-gimp_text(image_id=1, text="SUMMER SALE", size=96, font="Montserrat Bold", color="#111111", x=40, y=40)
-gimp_measure("bbox", layer_id=2); gimp_measure("dominant", image_id=1)
-gimp_render_compare(1, 3)                               -> before | after | diff
-gimp_export(1, "out/hero.webp", {"quality": 82})
-```
+`MCP client → stdio server → authenticated loopback TCP → plug-in inside GIMP`
 
-## How it works
+The plug-in runs operations on its GLib main loop, without worker threads. It uses a per-install token and only binds to `127.0.0.1`. PDB calls, recipes and Python can execute code with your user permissions: connect only trusted clients. Disabling `gimp_run_python` is not a sandbox. [Security](SECURITY.md) · [Architecture](docs/ARCHITECTURE.md)
 
-```text
-MCP client  --stdio-->  gimp-agent-mcp (server.py)  --TCP 127.0.0.1:9877 + token-->  bridge plug-in inside GIMP 3
-                                |                                                        |
-                        rembg (optional)                              GLib main loop runs each request on the plug-in
-                                                                      main thread against libgimp / GEGL / the PDB
-```
-
-The plug-in writes `agent-bridge.json` (port, token, pid) into GIMP's per-user config directory. The server reads it to connect. Details in `docs/ARCHITECTURE.md`.
-
-## Testing
-
-- `uv run pytest`: unit tests, no GIMP needed.
-- `uv run gimp-agent-mcp smoke`: 23 live checks against a headless GIMP. Add `--segmentation` to include the AI cut-out (downloads a small model on first use).
-- CI runs lint and unit tests on Ubuntu and Windows, and a second workflow installs real GIMP 3 on a Windows runner and runs the live smoke test on every push.
-
-## Security
-
-The bridge listens on loopback only and requires the token on every request. `gimp_run_python` and `gimp_pdb_call` are, by design, arbitrary code execution inside GIMP with the permissions of the user running it: give this server only to clients you trust with your files. Segmentation runs server-side and never sends pixels anywhere; the only network access in the project is rembg fetching its model once. See `SECURITY.md`.
-
-## Provenance
-
-Clean-room implementation under Apache-2.0. The author read the existing GPL and MIT GIMP MCP projects for lessons about the GIMP 3.2 API and copied no code from them.
-
-## Status
-
-`0.2.4`, beta. Listed in the [official MCP Registry](https://registry.modelcontextprotocol.io) as `io.github.SarutobiSasuke8/gimp-agent-mcp`. Verified end to end on Windows 11 with GIMP 3.2.4. macOS and Linux paths are implemented but not yet exercised on real machines; reports welcome. See `ROADMAP.md`.
+Clean-room implementation under Apache-2.0; no code copied from other GIMP MCP projects. [Roadmap](ROADMAP.md) · [Changelog](CHANGELOG.md) · [Report a bug](https://github.com/SarutobiSasuke8/gimp-agent-mcp/issues)

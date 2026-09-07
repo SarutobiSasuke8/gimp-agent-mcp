@@ -6,6 +6,7 @@ import os
 import socket
 import subprocess
 import sys
+import threading
 import time
 import uuid
 from pathlib import Path
@@ -28,6 +29,7 @@ class BridgeUnavailable(BridgeError):
 
 class BridgeClient:
     def __init__(self, timeout: float = core.DEFAULT_TIMEOUT, port: int | None = None, token: str | None = None):
+        self._lock = threading.RLock()
         self.timeout = timeout
         self._sock: socket.socket | None = None
         self._rfile = None
@@ -67,6 +69,10 @@ class BridgeClient:
         return host, port, token
 
     def connect(self) -> None:
+        with self._lock:
+            return self._connect_locked()
+
+    def _connect_locked(self) -> None:
         if self._sock is not None:
             return
         host, port, token = self._load_bridge_info()
@@ -85,6 +91,10 @@ class BridgeClient:
         self._port = port
 
     def close(self) -> None:
+        with self._lock:
+            return self._close_locked()
+
+    def _close_locked(self) -> None:
         for f in (self._rfile, self._wfile):
             try:
                 if f:
@@ -104,6 +114,10 @@ class BridgeClient:
     # -- calls ------------------------------------------------------------------------
 
     def call(self, op: str, params: dict[str, Any] | None = None, timeout: float | None = None) -> Any:
+        with self._lock:
+            return self._call_locked(op, params, timeout)
+
+    def _call_locked(self, op: str, params: dict[str, Any] | None = None, timeout: float | None = None) -> Any:
         self.connect()
         assert self._sock and self._rfile and self._wfile
         req_id = uuid.uuid4().hex
@@ -135,6 +149,10 @@ class BridgeClient:
         return response.get("result")
 
     def ping(self) -> dict[str, Any] | None:
+        with self._lock:
+            return self._ping_locked()
+
+    def _ping_locked(self) -> dict[str, Any] | None:
         try:
             info = self.call("ping", timeout=5.0)
         except BridgeError:

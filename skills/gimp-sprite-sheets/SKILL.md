@@ -48,6 +48,8 @@ Two limits worth stating out loud rather than quietly assuming:
 
 ## 2. Pack
 
+For equal-sized PNG frames, prefer `gimp_run_recipe("sprite_sheet_pack", {"input_paths": [...], "output_path": "out/sheet.png", "columns": 4, "keep_open": true})`. Input order is frame order. This recipe saves a layered XCF and full-cell atlas JSON, reopens the exported PNG, checks exact decoded RGBA pixels and bounds for each cell, and checks unused cells remain transparent. Existing outputs are refused by default. Read its returned bounds, drift and byte counts before reporting success. Mixed-size collections still need the measured atlas workflow below. `measuredPivot` in the JSON is diagnostic; choose a stable loader origin for the animation.
+
 Cell size is the shared canvas size. Choose the column count so the sheet stays within 2048 px on
 both axes where the frame count allows, since older mobile GPUs cap there.
 
@@ -78,6 +80,19 @@ Confirm the foot line is identical across every cell.
 Do not skip this because the pack obviously worked. The `flatten()` bug above produces a
 plausible-looking sheet and is caught **only** here: every cell measures as the full cell rectangle
 instead of its real bounds.
+
+## The metadata trap — a second way to fail after verify passes
+
+`Gimp.file_save`'s default PNG export writes a thumbnail plus `pHYs`/`tIME`/`bKGD` metadata chunks
+that the original loose files never had. Verify only checks pixels, so a sheet can pass it and still
+be a worse network payload than the files it replaced: a real-world pack of 8 frames measured 94.1KB
+against 88.1KB for the loose files it was meant to replace. Export through `file-png-export` directly
+with `bkgd`, `phys`, `time` and `include-thumbnail` off and `compression=9` instead of the plain
+`Gimp.file_save` dispatcher: same pixels, smaller file, in that case below the loose total.
+
+**"Fewer requests" and "fewer bytes" are two different claims, and packing only guarantees the
+first one.** Before calling a pack a win, diff the actual exported byte count against the sum of
+what it replaces, not just the pixel count. Report both numbers to whoever asked for the pack.
 
 ## 4. Emit the atlas
 

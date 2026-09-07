@@ -140,7 +140,8 @@ group.set_visible(False)
 result={'image_id':img.get_id(),'layer_id':layer.get_id()}
 """)["result"]
             created.append(fixture["image_id"])
-            rendered = call("render", **fixture)
+            rendered = call("render", layer_id=fixture["layer_id"])
+            assert rendered["image_id"] == fixture["image_id"]
             path = output / "nested-layer.png"
             path.write_bytes(base64.b64decode(rendered["png_base64"]))
             opened = call("open", path=str(path))
@@ -178,6 +179,7 @@ finally:
             sid = call("snapshot", image_id=iid)["snapshot_id"]
             snapshots.append(sid)
             assert sid not in [i["id"] for i in call("ping")["images"]]
+            assert sid not in [i["id"] for i in call("list_images")]
             assert call("drop_snapshot", snapshot_id=sid)["dropped"] == sid
             snapshots.remove(sid)
             return "snapshot released and excluded from status documents"

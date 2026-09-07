@@ -6,6 +6,36 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-09-07
+
+### Added
+
+- `gimp_edit_batch`: up to 100 supported edits on one image inside a single undo group, earlier-result references, cross-document checks and explicit partial-failure reporting. No persistent undo group or automatic rollback.
+- `gimp_context`: explicit document selection/selection bounds, selected-layer control and GUI presentation; refuses to infer focused image from list order.
+- `gimp_drop_snapshot` and a 16-snapshot retention limit, with cleanup when the bridge closes.
+- Real Linux GIMP smoke/capability CI; package publication now requires both Linux and Windows live workflows.
+- Captured GUI walkthrough and an MCP reproduction script; targeted regression report for curves, gradients, painting, rotation, batches, context and previews.
+
+### Fixed
+
+- Parallel calls from a single MCP server serialize socket access; this lock is server-side only, and the GIMP plug-in remains thread-free.
+- Lost/invalid responses no longer silently replay a potentially completed edit; response IDs are validated.
+- POSIX GIMP launch uses the installation's Python ahead of the MCP virtualenv, without inherited Python home/path overrides.
+- Numeric PDB arrays are boxed correctly for curves and brush strokes.
+- Layer-only renders resolve the owning image; nested-layer isolation keeps ancestors visible and rejects foreign layers. Comparison composites exclude hidden top layers.
+- Snapshots are excluded from user document lists; crop regions are validated before rendering.
+- Package, bridge, plugin and registry metadata are aligned; README claims and installation steps reflect actual scope.
+
+### Added
+
+- `sprite_sheet_pack`: ordered equal-size PNG frames to a transparent grid, named-layer XCF master and full-cell atlas JSON. Reopens the PNG and verifies each cell's decoded RGBA pixels, alpha bounds and unused-cell transparency; reports anchor drift and actual file sizes. Refuses existing output files by default.
+- Reproducible MCP stdio sprite-sheet proof, including slicing round-trip and invalid-input cases.
+
+### Fixed
+
+- Recipe parameters now enforce declared types and minimum values, reject non-finite numbers, and isolate mutable defaults between calls.
+- Sprite slicing validates positive tile dimensions, non-negative gaps/margins and plain filename prefixes; applies margins on all four sides and rejects grids with no complete cells.
+
 ## [0.3.0] - 2026-09-06
 
 ### Added

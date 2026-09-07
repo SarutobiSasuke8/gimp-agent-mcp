@@ -56,14 +56,15 @@ def test_successful_response_restores_timeout(monkeypatch):
         def readline(self):
             req = json.loads(c._wfile.getvalue())
             return core.encode_message({"id": req["id"], "ok": True, "result": 17})
+
     c, _ = attached(monkeypatch, Reader())
     assert c.call("ping", timeout=5) == 17
     assert c._sock.timeouts == [5, c.timeout]
 
 
-
 def test_posix_gimp_uses_its_installation_python(monkeypatch):
     from gimp_agent_mcp import bridge_client
+
     monkeypatch.setattr(bridge_client.sys, "platform", "linux")
     monkeypatch.setenv("PATH", "/project/.venv/bin:/usr/bin")
     monkeypatch.setenv("PYTHONPATH", "/project/vendor")
@@ -74,3 +75,27 @@ def test_posix_gimp_uses_its_installation_python(monkeypatch):
     assert env["PATH"].endswith("/project/.venv/bin:/usr/bin")
     assert not {"PYTHONPATH", "PYTHONHOME", "VIRTUAL_ENV"} & env.keys()
     assert env["GIMP_AGENT_MODE"] == "headless"
+
+
+
+def test_parallel_mcp_calls_do_not_interleave_on_one_socket(monkeypatch):
+    import threading
+    import time
+    from concurrent.futures import ThreadPoolExecutor
+    c = BridgeClient()
+    active = 0
+    peak = 0
+    guard = threading.Lock()
+    def exchange(op, params, timeout):
+        nonlocal active, peak
+        with guard:
+            active += 1
+            peak = max(peak, active)
+        time.sleep(0.01)
+        with guard:
+            active -= 1
+        return op
+    monkeypatch.setattr(c, "_call_locked", exchange)
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        assert list(pool.map(c.call, ["a", "b", "c", "d"])) == ["a", "b", "c", "d"]
+    assert peak == 1

@@ -56,6 +56,8 @@ def _call(op: str, params: dict[str, Any] | None = None, timeout: float | None =
         raise ToolError(str(exc)) from exc
     except BridgeError as exc:
         detail = f"{exc.error_type}: {exc}"
+        if exc.error_type == "UnknownOp":
+            detail += " The installed GIMP bridge may be older than this server. Run gimp-agent-mcp install-plugin and restart GIMP."
         # Deliberate validation errors are self-explanatory; only unexpected exceptions carry a trace tail.
         if exc.trace and exc.error_type != "BridgeError":
             detail += "\n" + exc.trace[-1500:]

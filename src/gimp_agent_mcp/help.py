@@ -24,7 +24,7 @@ HOW TO WORK WITH GIMP THROUGH THIS SERVER
 8. Export with gimp_export(image_id, path, options). Extension picks the format. Save working files as .xcf.
 9. Errors tell you what is valid: unknown argument -> valid list; unknown enum -> choices; refused op -> alternative.
 
-Other help topics: filters, colours, text, masks, paths, layers, measure, recipes, compose, errors.
+Other help topics: batch, filters, colours, text, masks, paths, layers, measure, recipes, compose, errors.
 """
 
 TOPICS["filters"] = """\
@@ -184,6 +184,28 @@ READING ERRORS
 "GIMP Agent Bridge is not reachable"           -> gimp_launch, or Filters > Development > Start Agent Bridge in GIMP
 "segmentation is not installed"                -> uv sync --extra segmentation in the server directory
 Long operations: pass a bigger timeout by splitting work, or use recipes which run inside GIMP in one call.
+"""
+
+
+TOPICS["batch"] = """GROUPED EDITS
+
+gimp_edit_batch(image_id, steps=[
+  {"op":"layer","params":{"action":"new","name":"Accent","fill":"#ee9467"}},
+  {"op":"layer","params":{"action":"set","layer_id":{"$ref":"0.id"},"opacity":65}}
+])
+
+Supported ops: layer, text, select, path, layer_mask, apply_filter. Params use the corresponding tool
+arguments; image_id is injected. All edits must belong to that image. 1..100 steps per request.
+Check complete and error. A failed batch preserves partial work, skips later steps and always closes
+its undo group. One Ctrl+Z in GIMP reverts it; there is no automatic rollback or programmatic undo.
+Do not wrap file exports, Python or arbitrary PDB calls in this batch. Existing gimp_run_python(image_id=...)
+can group custom Python when needed. After any uncertain connection outcome, inspect before retrying.
+
+gimp_context(image_id) reports selected layers and selection bounds. With multiple documents, pass an
+explicit image_id; focused-image detection is not available. selected_layer_ids changes layer selection;
+present=True presents that document in GUI mode. Brush/colours are the bridge context, not a live toolbox mirror.
+
+Drop unused snapshots with gimp_drop_snapshot(snapshot_id); at most 16 are retained.
 """
 
 
