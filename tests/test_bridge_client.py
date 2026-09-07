@@ -59,3 +59,18 @@ def test_successful_response_restores_timeout(monkeypatch):
     c, _ = attached(monkeypatch, Reader())
     assert c.call("ping", timeout=5) == 17
     assert c._sock.timeouts == [5, c.timeout]
+
+
+
+def test_posix_gimp_uses_its_installation_python(monkeypatch):
+    from gimp_agent_mcp import bridge_client
+    monkeypatch.setattr(bridge_client.sys, "platform", "linux")
+    monkeypatch.setenv("PATH", "/project/.venv/bin:/usr/bin")
+    monkeypatch.setenv("PYTHONPATH", "/project/vendor")
+    monkeypatch.setenv("PYTHONHOME", "/project/python")
+    monkeypatch.setenv("VIRTUAL_ENV", "/project/.venv")
+    env = bridge_client._gimp_environment("headless", str(__import__("pathlib").Path("/usr/bin/gimp")))
+    assert env["PATH"].split(bridge_client.os.pathsep)[0].endswith("bin")
+    assert env["PATH"].endswith("/project/.venv/bin:/usr/bin")
+    assert not {"PYTHONPATH", "PYTHONHOME", "VIRTUAL_ENV"} & env.keys()
+    assert env["GIMP_AGENT_MODE"] == "headless"

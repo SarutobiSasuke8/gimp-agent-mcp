@@ -179,6 +179,18 @@ def launch_gimp(mode: str = "gui", wait_seconds: float = 90.0, client: BridgeCli
     raise BridgeUnavailable(str(last))  # pragma: no cover
 
 
+def _gimp_environment(mode: str, executable: str) -> dict[str, str]:
+    env = dict(os.environ)
+    env["GIMP_AGENT_MODE"] = mode
+    # GIMP's Python plug-ins belong to GIMP's installation, not the MCP virtualenv.
+    # In particular uv prepends .venv/bin, whose python3 cannot import distro gi.
+    if sys.platform != "win32":
+        env["PATH"] = str(Path(executable).resolve().parent) + os.pathsep + env.get("PATH", "")
+        for key in ("PYTHONHOME", "PYTHONPATH", "VIRTUAL_ENV"):
+            env.pop(key, None)
+    return env
+
+
 def _launch_once(mode: str, wait_seconds: float, client: BridgeClient | None) -> dict[str, Any]:
     if mode not in ("gui", "headless"):
         raise ValueError("mode must be 'gui' or 'headless'")
@@ -192,8 +204,7 @@ def _launch_once(mode: str, wait_seconds: float, client: BridgeClient | None) ->
     creationflags = 0
     if sys.platform == "win32":
         creationflags = subprocess.CREATE_NEW_PROCESS_GROUP | getattr(subprocess, "DETACHED_PROCESS", 0)
-    env = dict(os.environ)
-    env["GIMP_AGENT_MODE"] = mode
+    env = _gimp_environment(mode, cmd[0])
     with open(log, "ab") as logfh:
         logfh.write(f"\n=== launch {time.strftime('%Y-%m-%d %H:%M:%S')} mode={mode}\n{cmd}\n".encode())
         proc = subprocess.Popen(
