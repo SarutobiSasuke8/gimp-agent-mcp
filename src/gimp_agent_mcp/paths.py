@@ -119,6 +119,16 @@ def find_gimp() -> GimpExecutables:
         macos = Path("/Applications/GIMP.app/Contents/MacOS")
         gui_candidates += [macos / "gimp", macos / "GIMP"]
         console_candidates += [macos / "gimp-console"]
+        # Homebrew installs the application bundle and exposes a command wrapper. Keep the
+        # official bundle first, then accept the wrapper and versioned names for non-default installs.
+        for name in ("gimp-3.2", "gimp-3.0", "gimp3", "gimp"):
+            found = shutil.which(name)
+            if found:
+                gui_candidates.append(Path(found))
+        for name in ("gimp-console-3.2", "gimp-console-3.0", "gimp-console"):
+            found = shutil.which(name)
+            if found:
+                console_candidates.append(Path(found))
     else:
         for name in ("gimp-3.2", "gimp-3.0", "gimp3", "gimp"):
             found = shutil.which(name)

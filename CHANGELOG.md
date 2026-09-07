@@ -10,6 +10,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - Diagnostic `gimp_render` overlays for source-coordinate grids, layer bounds and labels, selection bounds and labelled points. Overlays are drawn only on the temporary render duplicate.
 - A competitor-gap roadmap organised around visual precision, everyday editing, reusable assets and long-job/platform confidence.
+- Real-GIMP macOS validation for Apple Silicon and Intel, plus Homebrew command-wrapper discovery.
 
 ## [0.4.0] - 2026-09-07
 

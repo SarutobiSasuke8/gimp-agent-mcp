@@ -71,3 +71,20 @@ def test_gimp_exe_env_override(tmp_path, monkeypatch):
     monkeypatch.setenv("GIMP_AGENT_GIMP_EXE", str(exe))
     found = paths.find_gimp()
     assert found.gui == Path(exe)
+
+
+def test_macos_finds_homebrew_command_wrapper(tmp_path, monkeypatch):
+    wrapper = tmp_path / "gimp"
+    wrapper.write_bytes(b"")
+    monkeypatch.delenv("GIMP_AGENT_GIMP_EXE", raising=False)
+    monkeypatch.setattr(paths.platform, "system", lambda: "Darwin")
+    monkeypatch.setattr(paths.shutil, "which", lambda name: str(wrapper) if name == "gimp" else None)
+    found = paths.find_gimp()
+    assert found.gui == wrapper
+    assert found.console is None
+
+
+def test_macos_config_root_uses_application_support(tmp_path, monkeypatch):
+    monkeypatch.setattr(paths.platform, "system", lambda: "Darwin")
+    monkeypatch.setattr(paths.Path, "home", lambda: tmp_path)
+    assert paths.candidate_config_roots() == [tmp_path / "Library" / "Application Support" / "GIMP"]
