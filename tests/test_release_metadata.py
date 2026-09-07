@@ -13,3 +13,11 @@ def test_release_versions_cannot_drift():
     registry = json.loads((root / "server.json").read_text())
     assert package == __version__ == BRIDGE_VERSION == plugin["version"] == registry["version"]
     assert all(p["version"] == package for p in registry["packages"])
+
+
+def test_registry_description_fits_limit():
+    import json
+    from pathlib import Path
+
+    manifest = json.loads((Path(__file__).resolve().parents[1] / "server.json").read_text(encoding="utf-8"))
+    assert 1 <= len(manifest["description"]) <= 100
