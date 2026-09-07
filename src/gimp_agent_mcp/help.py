@@ -144,6 +144,7 @@ web_optimise        input_path, output_path (.webp/.jpg/.png), max_edge, budget_
 icon_set            input_path, output_dir, sizes=[16,32,...,512], prefix, background
 watermark           input_path, output_path, text or watermark_path, position, opacity, scale
 contact_sheet       input_dir, output_path, columns, thumb, labels
+sprite_sheet_pack   input_paths (ordered PNGs), output_path (.png), columns; verified PNG + layered XCF + atlas JSON
 sprite_sheet_slice  input_path, output_dir, tile_width, tile_height, margin, spacing
 fit_and_export      input_path, output_path, max_edge
 compose             manifest (dict) or manifest_path, output_path: build a card/banner from components (see compose)

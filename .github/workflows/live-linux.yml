@@ -1,0 +1,47 @@
+name: Live smoke (Linux + GIMP 3)
+
+on:
+  push:
+    branches: [main, 'codex/**']
+  pull_request:
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  live:
+    runs-on: ubuntu-latest
+    container: ubuntu:26.04
+    timeout-minutes: 25
+    env:
+      DEBIAN_FRONTEND: noninteractive
+      GIMP3_DIRECTORY: /tmp/gimp-agent-profile
+      GIMP_AGENT_CONFIG_DIR: /tmp/gimp-agent-profile
+      GIMP_AGENT_BRIDGE_FILE: /tmp/gimp-agent-profile/agent-bridge.json
+    steps:
+      - name: Install real GIMP 3 and Python GI
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends ca-certificates git gimp python3-gi python3-gi-cairo gir1.2-gimp-3.0 xvfb xauth dbus-x11 fonts-dejavu-core
+          gimp --version
+          gimp --version | grep -E 'version 3\.'
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv sync --extra dev --python 3.12
+      - name: Install bridge into isolated profile
+        run: |
+          mkdir -p "$GIMP3_DIRECTORY"
+          uv run gimp-agent-mcp install-plugin
+      - name: Live smoke and capability proof
+        run: |
+          dbus-run-session -- xvfb-run -a uv run gimp-agent-mcp smoke
+          dbus-run-session -- xvfb-run -a uv run python scripts/capability_proof.py /tmp/gimp-proof
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: linux-gimp-proof
+          path: |
+            /tmp/gimp-agent-profile/gimp-agent-launch.log
+            /tmp/gimp-proof/report.json

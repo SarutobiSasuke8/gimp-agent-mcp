@@ -12,7 +12,7 @@ def test_help_topics_cover_the_surface():
 
 def test_tool_surface():
     names = sorted(t.name for t in server.mcp._tool_manager.list_tools())
-    assert len(names) == 33, names
+    assert len(names) == 36, names
     assert "gimp_help" in names
     for required in (
         "gimp_measure",
@@ -40,6 +40,7 @@ def test_recipe_catalogue():
         "watermark",
         "contact_sheet",
         "sprite_sheet_slice",
+        "sprite_sheet_pack",
         "compose",
     }
 

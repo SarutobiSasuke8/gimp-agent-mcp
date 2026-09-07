@@ -8,7 +8,12 @@ permissions:
   contents: read
 
 jobs:
+  live-windows:
+    uses: ./.github/workflows/live-windows.yml
+  live-linux:
+    uses: ./.github/workflows/live-linux.yml
   build:
+    needs: [live-windows, live-linux]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

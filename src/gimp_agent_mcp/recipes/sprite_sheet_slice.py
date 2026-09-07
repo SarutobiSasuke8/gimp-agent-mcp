@@ -5,10 +5,10 @@ DESCRIPTION = "Slice a sprite sheet into fixed-size tiles, skipping fully transp
 PARAMS = {
     "input_path": {"type": "string", "required": True, "description": "Sprite sheet image"},
     "output_dir": {"type": "string", "required": True, "description": "Folder for the tiles"},
-    "tile_width": {"type": "integer", "required": True, "description": "Tile width in px"},
-    "tile_height": {"type": "integer", "required": True, "description": "Tile height in px"},
-    "margin": {"type": "integer", "default": 0, "description": "Outer margin before the first tile"},
-    "spacing": {"type": "integer", "default": 0, "description": "Gap between tiles"},
+    "tile_width": {"type": "integer", "required": True, "minimum": 1, "description": "Tile width in px"},
+    "tile_height": {"type": "integer", "required": True, "minimum": 1, "description": "Tile height in px"},
+    "margin": {"type": "integer", "default": 0, "minimum": 0, "description": "Outer margin on all four sides"},
+    "spacing": {"type": "integer", "default": 0, "minimum": 0, "description": "Gap between tiles"},
     "prefix": {"type": "string", "default": "tile", "description": "File name prefix; files are <prefix>-<row>-<col>.png"},
     "skip_empty": {"type": "boolean", "default": True, "description": "Skip tiles that are fully transparent"},
 }
@@ -18,9 +18,16 @@ import os
 
 src = os.path.abspath(os.path.expanduser(params["input_path"]))
 out_dir = os.path.abspath(os.path.expanduser(params["output_dir"]))
-os.makedirs(out_dir, exist_ok=True)
+
 tw, th = int(params["tile_width"]), int(params["tile_height"])
 margin, spacing = int(params["margin"]), int(params["spacing"])
+
+if tw <= 0 or th <= 0 or margin < 0 or spacing < 0:
+    raise ValueError("tile sizes must be positive; margin and spacing must be non-negative")
+prefix = params["prefix"]
+if not prefix or any(c in prefix for c in '/\\:') or prefix in (".", ".."):
+    raise ValueError("prefix must be a plain file-name prefix")
+os.makedirs(out_dir, exist_ok=True)
 
 sheet = Gimp.file_load(Gimp.RunMode.NONINTERACTIVE, Gio.File.new_for_path(src))
 if sheet is None:
@@ -33,8 +40,11 @@ try:
     if not layer.has_alpha():
         layer.add_alpha()
     W, H = sheet.get_width(), sheet.get_height()
-    cols = (W - margin + spacing) // (tw + spacing)
-    rows = (H - margin + spacing) // (th + spacing)
+    cols = (W - 2 * margin + spacing) // (tw + spacing)
+    rows = (H - 2 * margin + spacing) // (th + spacing)
+    if cols <= 0 or rows <= 0:
+        raise ValueError("no complete tiles fit inside the sheet margins")
+    layer.resize_to_image_size()
     buf = layer.get_buffer()
     for r in range(rows):
         for c in range(cols):

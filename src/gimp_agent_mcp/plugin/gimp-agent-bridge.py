@@ -202,6 +202,7 @@ def _image_summary(image):
         "file": gfile.get_path() if gfile is not None else None,
         "dirty": image.is_dirty(),
         "layer_count": len(image.get_layers()),
+        "selected_layer_ids": [layer.get_id() for layer in image.get_selected_layers()],
     }
 
 
@@ -288,6 +289,22 @@ def _coerce(value, pspec):
         return _get_image(value["id"] if isinstance(value, dict) else value)
     if name in ITEM_TYPE_NAMES:
         return _get_item(value["id"] if isinstance(value, dict) else value)
+    if name in ("GimpDoubleArray", "GimpInt32Array"):
+        if not isinstance(value, list):
+            raise BridgeError(f"{pspec.name} must be a JSON array")
+        import math
+        if any(type(v) not in (int, float) or not math.isfinite(v) for v in value):
+            raise BridgeError(f"{pspec.name} must contain finite numbers")
+        if name == "GimpInt32Array" and any(type(v) is not int or not -(2**31) <= v < 2**31 for v in value):
+            raise BridgeError(f"{pspec.name} must contain signed 32-bit integers")
+        boxed = GObject.Value(gtype)
+        setter = Gimp.value_set_double_array if name == "GimpDoubleArray" else Gimp.value_set_int32_array
+        setter(boxed, value)
+        return boxed.get_boxed()
+    if name == "GeglPath":
+        if not isinstance(value, str):
+            raise BridgeError(f"{pspec.name} must be a GEGL path string")
+        return Gegl.Path.new_from_string(value)
     if name == "GimpCoreObjectArray":
         ids = value if isinstance(value, list) else [value]
         return [_get_item(v["id"] if isinstance(v, dict) else v) for v in ids]
@@ -348,6 +365,7 @@ class Bridge:
             self.ns,
         )
         self.snapshots = {}
+        self.displays = {}
         self.ns["bridge"] = self
         self.ns["image_by_id"] = _get_image
         self.ns["item_by_id"] = _get_item
@@ -391,6 +409,10 @@ class Bridge:
 
     def close(self):
         self.stopping = True
+        for snap in list(self.snapshots.values()):
+            with contextlib.suppress(Exception):
+                snap.delete()
+        self.snapshots.clear()
         for conn in list(self.clients.values()):
             conn.close()
         if self.server_sock is not None:
@@ -461,7 +483,7 @@ class Bridge:
         if self.mode == "headless":
             return
         try:
-            Gimp.Display.new(image)
+            self.displays[image.get_id()] = Gimp.Display.new(image)
         except Exception:
             pass
 
@@ -473,6 +495,77 @@ class Bridge:
 
     # -- ops -----------------------------------------------------------------------
 
+    def op_context(self, params):
+        images = [img for img in Gimp.get_images() if img.get_id() not in self.snapshots]
+        image_id = params.get("image_id")
+        if image_id is None:
+            if len(images) != 1:
+                return {"image_id": None, "requires_image_id": True,
+                        "reason": "GIMP does not expose the focused image through this API; choose an image_id",
+                        "images": [_image_summary(img) for img in images]}
+            image = images[0]
+        else:
+            image = _get_image(image_id)
+        selected = params.get("selected_layer_ids")
+        if selected is not None:
+            if not isinstance(selected, list):
+                raise BridgeError("selected_layer_ids must be a list")
+            layers = [_get_item(i) for i in selected]
+            if any(not isinstance(layer, Gimp.Layer) or layer.get_image() != image for layer in layers):
+                raise BridgeError("all selected layers must belong to the specified image")
+            if not image.set_selected_layers(layers):
+                raise BridgeError("GIMP refused the layer selection")
+        presented = False
+        if params.get("present"):
+            if self.mode == "headless":
+                raise BridgeError("present requires a GUI bridge")
+            display = self.displays.get(image.get_id())
+            if display is None or not display.is_valid():
+                display = Gimp.Display.new(image)
+                self.displays[image.get_id()] = display
+            display.present()
+            presented = True
+        info = _image_info(image)
+        return {"image_id": image.get_id(), "selected_layer_ids": info["selected_layer_ids"],
+                "selection": info["selection"], "presented": presented,
+                "focus_source": "explicit-image-id" if image_id is not None else "only-open-image",
+                "context_scope": "bridge plug-in context; not a live mirror of the user's toolbox",
+                "foreground": _serialise(Gimp.context_get_foreground()),
+                "background": _serialise(Gimp.context_get_background()),
+                "brush": Gimp.context_get_brush().get_name(), "opacity": Gimp.context_get_opacity()}
+
+    def op_edit_batch(self, params):
+        steps = params.get("steps")
+        core.validate_edit_steps(steps)
+        image = _get_image(params.get("image_id"))
+        if not image.undo_is_enabled():
+            raise BridgeError("undo is disabled for this image; cannot create an undoable batch")
+        results = []
+        error = None
+        if not image.undo_group_start():
+            raise BridgeError("could not start undo group")
+        try:
+            for index, step in enumerate(steps):
+                try:
+                    args = core.resolve_edit_refs(step["params"], results)
+                    if args.get("image_id") is not None and int(args["image_id"]) != image.get_id():
+                        raise BridgeError("batch edits must target the batch image")
+                    for key in ("layer_id", "item_id", "path_id", "parent_id"):
+                        if args.get(key) is not None and _get_item(args[key]).get_image() != image:
+                            raise BridgeError(f"{key} belongs to a different image")
+                    if step["op"] in ("layer", "text", "select", "path"):
+                        args["image_id"] = image.get_id()
+                    results.append(getattr(self, "op_" + step["op"])(args))
+                except Exception as exc:
+                    error = {"step": index, "type": type(exc).__name__, "message": str(exc)}
+                    break
+        finally:
+            image.undo_group_end()
+            self._flush()
+        return {"complete": error is None, "image_id": image.get_id(), "completed_steps": len(results),
+                "results": results, "error": error, "undo_group_closed": True,
+                "recovery": "One Ctrl+Z in GIMP reverts the batch, including any partial failing step. No automatic rollback."}
+
     def op_ping(self, params):
         return {
             "bridge_version": core.BRIDGE_VERSION,
@@ -480,7 +573,7 @@ class Bridge:
             "python_version": sys.version.split()[0],
             "mode": self.mode,
             "pid": os.getpid(),
-            "images": [_image_summary(img) for img in Gimp.get_images()],
+            "images": [_image_summary(img) for img in Gimp.get_images() if img.get_id() not in self.snapshots],
             "config_dir": Gimp.directory(),
         }
 
@@ -591,6 +684,8 @@ class Bridge:
             images = Gimp.get_images()
             if not images:
                 raise BridgeError("no open images to render")
+            if len(images) != 1:
+                raise BridgeError("multiple images are open; pass image_id explicitly")
             image = images[0]
         max_size = int(params.get("max_size") or 1024)
         layer_id = params.get("layer_id")
@@ -603,13 +698,25 @@ class Bridge:
                 # Find the duplicate of the requested layer by position, then isolate it.
                 src_items = _flatten_layers(image.get_layers())
                 dup_items = _flatten_layers(dup.get_layers())
-                for src, cpy in zip(src_items, dup_items, strict=False):
-                    cpy.set_visible(src.get_id() == wanted)
+                target = next((item for item in src_items if item.get_id() == wanted), None)
+                if target is None:
+                    raise BridgeError("layer_id is not a layer in the specified image")
+                ancestors = set()
+                parent = target.get_parent()
+                while parent is not None:
+                    ancestors.add(parent.get_id())
+                    parent = parent.get_parent()
+                descendants = {item.get_id() for item in _flatten_layers(target.get_children())} if target.is_group() else set()
+                for src, cpy in zip(src_items, dup_items, strict=True):
+                    ident = src.get_id()
+                    cpy.set_visible(ident == wanted or ident in ancestors or (ident in descendants and src.get_visible()))
             if region:
                 x = int(region.get("x", 0))
                 y = int(region.get("y", 0))
                 w = int(region.get("width", dup.get_width() - x))
                 h = int(region.get("height", dup.get_height() - y))
+                if x < 0 or y < 0 or w <= 0 or h <= 0 or x + w > dup.get_width() or y + h > dup.get_height():
+                    raise BridgeError("region must be a positive rectangle within the image")
                 dup.crop(w, h, x, y)
             visible = [layer for layer in dup.get_layers() if layer.get_visible()]
             if len(visible) > 1:
@@ -913,13 +1020,13 @@ class Bridge:
     def _flat_copy(self, image):
         """Duplicate an image and merge it to one visible layer. Caller deletes the duplicate."""
         dup = image.duplicate()
-        visible = [layer for layer in dup.get_layers() if layer.get_visible()]
-        if len(visible) > 1:
-            dup.merge_visible_layers(Gimp.MergeType.CLIP_TO_IMAGE)
-        layers = dup.get_layers()
-        if not layers:
-            raise BridgeError("image has no layers to render")
-        return dup, layers[0]
+        # A transparent canvas layer makes the merged result cover the whole image,
+        # even when the only visible content is offset, a group, or entirely hidden.
+        base = Gimp.Layer.new(dup, "Composite canvas", dup.get_width(), dup.get_height(), Gimp.ImageType.RGBA_IMAGE, 100.0, Gimp.LayerMode.NORMAL)
+        dup.insert_layer(base, None, len(dup.get_layers()))
+        base.fill(Gimp.FillType.TRANSPARENT)
+        layer = dup.merge_visible_layers(Gimp.MergeType.CLIP_TO_IMAGE)
+        return dup, layer
 
     def _png_bytes(self, image, max_size):
         w, h = image.get_width(), image.get_height()
@@ -939,6 +1046,8 @@ class Bridge:
 
     def op_snapshot(self, params):
         image = _get_image(params["image_id"])
+        if len(self.snapshots) >= 16:
+            raise BridgeError("snapshot limit (16) reached; drop unused snapshots before creating another")
         snap = image.duplicate()
         self.snapshots[snap.get_id()] = snap
         return {"snapshot_id": snap.get_id(), "image_id": image.get_id(), "width": snap.get_width(), "height": snap.get_height()}

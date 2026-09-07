@@ -203,3 +203,41 @@ def truncate(text: str, limit: int = 20000) -> str:
     if len(text) <= limit:
         return text
     return text[:limit] + f"\n... [truncated {len(text) - limit} chars]"
+
+
+# Bounded batches cannot close documents, run arbitrary code or leave undo groups open.
+EDIT_OPS = frozenset({"layer", "text", "select", "path", "layer_mask", "apply_filter"})
+
+
+def validate_edit_steps(steps):
+    if not isinstance(steps, list) or not 1 <= len(steps) <= 100:
+        raise ValueError("steps must be a list containing 1 to 100 edits")
+    for index, step in enumerate(steps):
+        if not isinstance(step, dict) or set(step) != {"op", "params"}:
+            raise ValueError(f"step {index} must contain exactly op and params")
+        if not isinstance(step["op"], str) or step["op"] not in EDIT_OPS:
+            raise ValueError(f"step {index}: op must be one of {sorted(EDIT_OPS)}")
+        if not isinstance(step["params"], dict):
+            raise ValueError(f"step {index}: params must be an object")
+
+
+def resolve_edit_refs(value, results):
+    """Resolve {"$ref": "0.id"} against earlier step results; never evaluate code."""
+    if isinstance(value, dict):
+        if "$ref" in value:
+            if set(value) != {"$ref"} or not isinstance(value["$ref"], str):
+                raise ValueError("a reference must be an object with only a string $ref")
+            parts = value["$ref"].split(".")
+            if not parts[0].isdigit() or int(parts[0]) >= len(results):
+                raise ValueError("reference must address a completed earlier step")
+            result = results[int(parts[0])]
+            try:
+                for key in parts[1:]:
+                    result = result[int(key)] if isinstance(result, list) and key.isdigit() else result[key]
+            except (KeyError, IndexError, TypeError) as exc:
+                raise ValueError(f"invalid reference {value['$ref']!r}") from exc
+            return result
+        return {k: resolve_edit_refs(v, results) for k, v in value.items()}
+    if isinstance(value, list):
+        return [resolve_edit_refs(v, results) for v in value]
+    return value

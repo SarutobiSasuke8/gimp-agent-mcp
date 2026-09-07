@@ -286,6 +286,20 @@ def run_smoke(mode: str = "headless", keep: bool = False, verbose: bool = True, 
 
     check("recipe sprite_sheet_slice", _recipe_slice)
 
+
+    def _recipe_pack():
+        sources = [str(tmpdir / "tiles" / f"tile-{r}-{c}.png") for r in range(2) for c in range(2)]
+        out = client.call("exec", {"code": _recipe_code("sprite_sheet_pack", {
+            "input_paths": sources, "output_path": str(tmpdir / "packed.png"), "columns": 3,
+        })}, timeout=300)
+        res = out["result"]
+        assert res["verification"] == "exact RGBA match" and res["frames"] == 4, res
+        assert res["size"] == {"w": 225, "h": 100}, res
+        assert os.path.getsize(res["xcf_path"]) > 0 and os.path.getsize(res["atlas_path"]) > 0, res
+        return res
+
+    check("recipe sprite_sheet_pack (verified export)", _recipe_pack)
+
     def _recipe_compose():
         out_path = str(tmpdir / "card.png")
         manifest = {

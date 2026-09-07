@@ -2,8 +2,9 @@ name: Live smoke (Windows + GIMP 3)
 
 on:
   push:
-    branches: [main]
+    branches: [main, 'codex/**']
   pull_request:
+  workflow_call:
   workflow_dispatch:
 
 permissions:

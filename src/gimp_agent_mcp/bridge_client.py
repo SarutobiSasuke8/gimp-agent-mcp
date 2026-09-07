@@ -104,31 +104,30 @@ class BridgeClient:
     # -- calls ------------------------------------------------------------------------
 
     def call(self, op: str, params: dict[str, Any] | None = None, timeout: float | None = None) -> Any:
-        last_exc: Exception | None = None
-        for attempt in range(2):
-            try:
-                self.connect()
-                assert self._sock and self._rfile and self._wfile
-                if timeout is not None:
-                    self._sock.settimeout(timeout)
-                req_id = uuid.uuid4().hex
-                self._wfile.write(core.encode_message({"id": req_id, "token": self._token, "op": op, "params": params or {}}))
-                self._wfile.flush()
-                line = self._rfile.readline()
-                if not line:
-                    raise ConnectionError("bridge closed the connection")
-                response = core.decode_message(line)
-                if timeout is not None:
-                    self._sock.settimeout(self.timeout)
-                break
-            except (OSError, ConnectionError, ValueError) as exc:
-                last_exc = exc
-                self.close()
-                if attempt == 1 or isinstance(exc, BridgeUnavailable):
-                    raise BridgeUnavailable(f"bridge call {op} failed: {exc}") from exc
-                time.sleep(0.2)
-        else:  # pragma: no cover
-            raise BridgeUnavailable(str(last_exc))
+        self.connect()
+        assert self._sock and self._rfile and self._wfile
+        req_id = uuid.uuid4().hex
+        payload = core.encode_message({"id": req_id, "token": self._token, "op": op, "params": params or {}})
+        try:
+            self._sock.settimeout(self.timeout if timeout is None else timeout)
+            self._wfile.write(payload)
+            self._wfile.flush()
+            line = self._rfile.readline()
+            if not line:
+                raise ConnectionError("bridge closed the connection")
+            response = core.decode_message(line)
+            if response.get("id") != req_id:
+                raise ValueError("bridge response id does not match request")
+        except (OSError, ConnectionError, ValueError) as exc:
+            self.close()
+            raise BridgeUnavailable(
+                f"Response to {op!r} was lost or invalid; its outcome is unknown. "
+                "The request was NOT replayed. Reconnect and inspect the image before retrying an edit. "
+                f"Details: {exc}"
+            ) from exc
+        finally:
+            if self._sock is not None:
+                self._sock.settimeout(self.timeout)
 
         if not response.get("ok"):
             err = response.get("error") or {}

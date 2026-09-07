@@ -31,9 +31,11 @@ Working model:
 - Filters: use gimp_filter_search to find a GEGL operation (blur, dropshadow, levels, unsharp-mask, ...),
   gimp_filter_describe to read its properties, then gimp_apply_filter. mode="merge" bakes the filter into
   the pixels; mode="append" adds it as a non-destructive layer effect.
-- Anything else in GIMP is a PDB procedure: gimp_pdb_search -> gimp_pdb_describe -> gimp_pdb_call.
+- Many other GIMP operations are PDB procedures: gimp_pdb_search -> gimp_pdb_describe -> gimp_pdb_call.
   Arguments are passed by name; images and items are passed as their ids; colours as "#rrggbb", "white" or
   "rgb(255,0,0)"; enums by nick such as "clip-to-image". run-mode defaults to noninteractive.
+- gimp_edit_batch groups supported edits into one Ctrl+Z step. Inspect complete/error; failures preserve partial work.
+- gimp_context reports selected layers for an explicit image, never guesses the focused document.
 - gimp_run_python executes Python inside GIMP with Gimp, Gegl, Gio available and a persistent namespace.
   Prefer it for multi-step work; the expression value or a variable named `result` comes back.
 - Recipes are tested multi-step jobs (gimp_list_recipes). Prefer a recipe over re-deriving the steps.
@@ -113,6 +115,18 @@ def gimp_shutdown(quit_gimp: bool | None = None) -> dict[str, Any]:
     result = _call("shutdown", params, timeout=10.0)
     _client.close()
     return result
+
+
+@mcp.tool()
+def gimp_context(image_id: int | None = None, selected_layer_ids: list[int] | None = None, present: bool = False) -> dict[str, Any]:
+    """Read a document's selected layers, selection bounds and bridge colour/brush context. Optionally select layers or present a GUI document. With multiple images pass image_id; focused-image detection is unavailable, never inferred from list order."""
+    return _call("context", {"image_id": image_id, "selected_layer_ids": selected_layer_ids, "present": present})
+
+
+@mcp.tool()
+def gimp_edit_batch(image_id: int, steps: list[dict[str, Any]]) -> dict[str, Any]:
+    """Run 1..100 edits on one image in ONE undo group. steps=[{op:'layer'|'text'|'select'|'path'|'layer_mask'|'apply_filter', params:{...}}]. Params use the corresponding tool arguments; image_id is injected. Reference an earlier result with {'$ref':'0.id'}. Check complete/error: failure stops later steps, preserves partial work, and always closes the undo group. One Ctrl+Z in GIMP reverts it; this is not automatic rollback or programmatic undo. No edits by another bridge request interleave within the batch."""
+    return _call("edit_batch", {"image_id": image_id, "steps": steps})
 
 
 # --------------------------------------------------------------------------- images
@@ -269,6 +283,12 @@ def gimp_measure(
 def gimp_snapshot(image_id: int) -> dict[str, Any]:
     """Take a hidden snapshot of an image's current state so gimp_render_compare can show before/after later."""
     return _call("snapshot", {"image_id": image_id})
+
+
+@mcp.tool()
+def gimp_drop_snapshot(snapshot_id: int) -> dict[str, Any]:
+    """Release a stored comparison snapshot. At most 16 may be retained per bridge; snapshots are also cleaned up when the bridge closes."""
+    return _call("drop_snapshot", {"snapshot_id": snapshot_id})
 
 
 @mcp.tool()

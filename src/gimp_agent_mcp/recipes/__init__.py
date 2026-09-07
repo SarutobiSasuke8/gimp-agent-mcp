@@ -11,7 +11,9 @@ Each recipe module defines:
 
 from __future__ import annotations
 
+import copy
 import importlib
+import math
 import pkgutil
 from typing import Any
 
@@ -59,5 +61,24 @@ def resolve_params(name: str, given: dict[str, Any] | None) -> dict[str, Any]:
         elif spec.get("required"):
             raise ValueError(f"recipe {name} requires parameter {key!r}")
         else:
-            resolved[key] = spec.get("default")
+            resolved[key] = copy.deepcopy(spec.get("default"))
+        value = resolved[key]
+        if value is None and spec.get("default", ...) is None:
+            continue
+        expected = spec.get("type")
+        valid = {
+            "string": isinstance(value, str),
+            "integer": type(value) is int,
+            "number": type(value) in (int, float),
+            "boolean": type(value) is bool,
+            "array": isinstance(value, list),
+            "object": isinstance(value, dict),
+        }.get(expected, True)
+        if not valid:
+            raise ValueError(f"recipe {name} parameter {key!r} must be {expected}")
+        if type(value) in (int, float):
+            if isinstance(value, float) and not math.isfinite(value):
+                raise ValueError(f"recipe {name} parameter {key!r} must be finite")
+            if "minimum" in spec and value < spec["minimum"]:
+                raise ValueError(f"recipe {name} parameter {key!r} must be >= {spec['minimum']}")
     return resolved

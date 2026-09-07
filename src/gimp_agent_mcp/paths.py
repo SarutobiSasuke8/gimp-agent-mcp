@@ -157,7 +157,7 @@ def launch_command(mode: str = "gui") -> list[str]:
         cmd = [str(exe)]
         if exes.console is None:
             cmd.append("--no-interface")
-        cmd += ["-i", "--batch-interpreter=python-fu-eval", "-b", start_bridge_batch_code(headless=True)]
+        cmd += ["--new-instance", "-i", "--batch-interpreter=python-fu-eval", "-b", start_bridge_batch_code(headless=True)]
         return cmd
     exe = exes.gui
     if exe is None:
