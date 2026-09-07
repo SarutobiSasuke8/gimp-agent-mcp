@@ -32,13 +32,13 @@ Ops: `context`, `edit_batch`, `ping`, `shutdown`, `exec`, `list_images`, `image_
 
 ## Pixels
 
-Measurement ops read pixels straight from the drawable's `GeglBuffer` as `R'G'B'A u8`, optionally at a reduced scale for large layers (`alpha_bbox` caps at four megapixels and reports `approximate: true` when it downsampled). Mask writes go through the drawable's shadow buffer (`get_shadow_buffer` -> `set` -> `merge_shadow` -> `update`), which keeps them undoable.
+Measurement ops read pixels straight from the drawable's `GeglBuffer`. Colour reads use `R'G'B'A u8`; alpha bounds scan full-resolution `A u8` data in bounded horizontal bands, so large-layer bounds remain exact. Mask writes go through the drawable's shadow buffer (`get_shadow_buffer` -> `set` -> `merge_shadow` -> `update`), which keeps them undoable.
 
 ## Segmentation
 
 `gimp_remove_background` asks the bridge for a full-resolution PNG of one layer (`layer_png`), runs rembg in the server process, and sends the 8-bit mask back as raw bytes (`set_mask_pixels`). The plug-in never imports rembg or PIL, so GIMP's bundled Python stays untouched and the heavy dependency is optional.
 
-There are no threads in the plug-in. The listening socket and every client socket are non-blocking and watched with `GLib.io_add_watch` (`GLib.IOChannel.win32_new_socket` on Windows, `unix_new` elsewhere) on the main loop that the bridge procedure runs. A complete line is decoded and executed immediately on the main thread and the response is written back with a blocking `sendall`. Several clients can stay connected at once; their requests interleave at line granularity and GIMP work is naturally serialised. This replaced an earlier accept-thread design after repeated unexplained plug-in crashes: libgimp and PyGObject inside a plug-in process should only ever be driven from the main thread.
+There are no threads in the plug-in. The listening socket and every client socket are non-blocking and watched with `GLib.io_add_watch` (`GLib.IOChannel.win32_new_socket` on Windows, `unix_new` elsewhere) on the main loop that the bridge procedure runs. A complete line is decoded and executed immediately on the main thread and the response is written back with a non-blocking send loop and a bounded back-pressure wait. Several clients can stay connected at once; their requests interleave at line granularity and GIMP work is naturally serialised. This replaced an earlier accept-thread design after repeated unexplained plug-in crashes: libgimp and PyGObject inside a plug-in process should only ever be driven from the main thread.
 
 ## Discovery
 
@@ -46,7 +46,7 @@ The plug-in writes `agent-bridge.json` into `Gimp.directory()` (the versioned pe
 
 ## Launch
 
-`gimp_launch` runs GIMP with `--batch-interpreter=python-fu-eval -b "<code>"`. The code looks up `plug-in-gimp-agent-bridge` in the PDB and runs it non-interactively. The bridge procedure blocks in a `GLib.MainLoop` until `shutdown`, which keeps GIMP alive; headless mode uses `gimp-console -i` so there is no window. GUI mode passes `--new-instance` so a second GIMP does not try to hand the command to a running one.
+`gimp_launch` runs GIMP with `--batch-interpreter=python-fu-eval -b "<code>"`. The code looks up `plug-in-gimp-agent-bridge` in the PDB and runs it non-interactively. The bridge procedure blocks in a `GLib.MainLoop` until `shutdown`, which keeps GIMP alive; headless mode uses `gimp-console -i` so there is no window. Both launch modes pass `--new-instance` so a test or batch does not hand its command to an existing GIMP window.
 
 ## Coercion
 
