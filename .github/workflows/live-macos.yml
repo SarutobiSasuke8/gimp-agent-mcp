@@ -24,9 +24,9 @@ jobs:
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
     env:
-      GIMP3_DIRECTORY: ${{ runner.temp }}/gimp-agent-profile
-      GIMP_AGENT_CONFIG_DIR: ${{ runner.temp }}/gimp-agent-profile
-      GIMP_AGENT_BRIDGE_FILE: ${{ runner.temp }}/gimp-agent-profile/agent-bridge.json
+      GIMP3_DIRECTORY: /tmp/gimp-agent-profile
+      GIMP_AGENT_CONFIG_DIR: /tmp/gimp-agent-profile
+      GIMP_AGENT_BRIDGE_FILE: /tmp/gimp-agent-profile/agent-bridge.json
       GIMP_AGENT_PORT: "23877"
     steps:
       - uses: actions/checkout@v4
@@ -53,5 +53,5 @@ jobs:
           name: macos-gimp-proof-${{ matrix.arch }}
           path: |
             proof-output/report.json
-            ${{ runner.temp }}/gimp-agent-profile/gimp-agent-launch.log
+            /tmp/gimp-agent-profile/gimp-agent-launch.log
           if-no-files-found: ignore
