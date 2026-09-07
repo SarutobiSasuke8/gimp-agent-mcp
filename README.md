@@ -79,7 +79,7 @@ Use `gimp_context(image_id)` to read selected layers and selection bounds. With 
 
 | Capability | What you get |
 |---|---|
-| Visual feedback | Whole-image, layer and region previews; saved snapshots; before/after/diff comparisons. Nested-layer previews preserve the parent visibility needed to see the layer. |
+| Visual feedback | Whole-image, layer and region previews; saved snapshots; before/after/diff comparisons. Diagnostic overlays can add a coordinate grid, layer boxes, selection bounds and labelled points without changing the source. |
 | Measured output | Pixel colours, alpha bounds, histograms and dominant colours. Sprite packing reopens the exported PNG and compares each cell's decoded RGBA pixels with its source. |
 | Editable work | Named layers, text, paths, masks and non-destructive layer effects. Export an XCF master and delivery files separately. |
 | One undo step | `gimp_edit_batch` groups supported edits on one image into one Ctrl+Z step. A failed step stops the batch, reports partial results and closes the group. |
@@ -104,6 +104,13 @@ Other GIMP MCP projects also provide TCP bridges and visual feedback. This proje
 
 Images and items use integer IDs. Colours accept hex, common names, CSS RGB strings or component arrays; enums use nicks returned by the describe tools. Call `gimp_help("batch")` for grouped-edit examples. `gimp_run_python` may be disabled, reducing the tool count by one.
 
+For visual placement, ask for a diagnostic preview without marking the working image:
+
+```text
+gimp_render(image_id=3, overlay=["grid", "layers", "selection"], grid_size=100,
+            points=[{"x": 600, "y": 340, "label": "headline centre"}])
+```
+
 ## Recipes
 
 | Recipe | Job |
@@ -127,7 +134,7 @@ Version **0.4.0**, beta. Windows GIMP **3.2.4** and Linux GIMP **3.2.2** (Ubuntu
 - `gimp_edit_batch` accepts bounded layer, text, selection, path, mask and filter edits. It does not keep a transaction open between separate agent calls or automatically roll back a failed batch. The human uses GIMP's Undo/Redo; there is no invented programmatic undo endpoint.
 - Some GEGL source operations, including linear gradients, are not drawable filters. Use the PDB gradient-fill procedure instead. Vector warp/liquify parity is not claimed.
 - Sprite packing currently takes equal-sized PNG files, without padding or direct open-layer input. It does not align animation or pack mixed-size rectangles.
-- Long filters are synchronous. Mid-filter cancellation, progress reporting and render overlays remain follow-up work.
+- Long filters are synchronous. Mid-filter cancellation and progress reporting remain follow-up work.
 
 ## Verify your setup
 

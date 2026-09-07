@@ -678,6 +678,118 @@ class Bridge:
         self._flush()
         return {"closed": int(params["image_id"])}
 
+    def _add_render_overlays(self, image, modes, points, grid_size, source_layers, selection, viewport):
+        """Draw diagnostics on a temporary duplicate after crop/scale; never touches the source image."""
+        width, height = image.get_width(), image.get_height()
+        vx, vy, vw, vh = viewport
+        sx, sy = width / float(vw), height / float(vh)
+        pixels = bytearray(width * height * 4)
+        labels = []
+        point_markers = []
+
+        def project(x, y):
+            return int(round((x - vx) * sx)), int(round((y - vy) * sy))
+
+        def pixel(x, y, rgba):
+            if 0 <= x < width and 0 <= y < height:
+                offset = (y * width + x) * 4
+                pixels[offset : offset + 4] = bytes(rgba)
+
+        def line(x1, y1, x2, y2, rgba, thickness=1):
+            dx, dy = abs(x2 - x1), -abs(y2 - y1)
+            step_x, step_y = (1 if x1 < x2 else -1), (1 if y1 < y2 else -1)
+            error = dx + dy
+            while True:
+                for oy in range(-(thickness // 2), thickness - thickness // 2):
+                    for ox in range(-(thickness // 2), thickness - thickness // 2):
+                        pixel(x1 + ox, y1 + oy, rgba)
+                if x1 == x2 and y1 == y2:
+                    break
+                twice = 2 * error
+                if twice >= dy:
+                    error += dy
+                    x1 += step_x
+                if twice <= dx:
+                    error += dx
+                    y1 += step_y
+
+        def rectangle(x1, y1, x2, y2, rgba, thickness=2):
+            line(x1, y1, x2, y1, rgba, thickness)
+            line(x2, y1, x2, y2, rgba, thickness)
+            line(x2, y2, x1, y2, rgba, thickness)
+            line(x1, y2, x1, y1, rgba, thickness)
+
+        if "grid" in modes:
+            first_x = ((vx + grid_size - 1) // grid_size) * grid_size
+            first_y = ((vy + grid_size - 1) // grid_size) * grid_size
+            xs = list(range(first_x, vx + vw + 1, grid_size))
+            ys = list(range(first_y, vy + vh + 1, grid_size))
+            if len(xs) + len(ys) > 200:
+                raise BridgeError("grid would exceed 200 lines; use a larger grid_size")
+            for source_x in xs:
+                x, _ = project(source_x, vy)
+                line(x, 0, x, height - 1, (0, 220, 255, 255))
+                labels.append((str(source_x), x + 2, 2, "#00dcff"))
+            for source_y in ys:
+                _, y = project(vx, source_y)
+                line(0, y, width - 1, y, (0, 220, 255, 255))
+                labels.append((str(source_y), 2, y + 2, "#00dcff"))
+
+        if "layers" in modes:
+            for item in source_layers:
+                x1, y1 = project(item["x"], item["y"])
+                x2, y2 = project(item["x"] + item["width"], item["y"] + item["height"])
+                if x2 < 0 or y2 < 0 or x1 >= width or y1 >= height:
+                    continue
+                rectangle(max(0, x1), max(0, y1), min(width - 1, x2), min(height - 1, y2),
+                          (255, 64, 220, 255), 2)
+                if len(labels) < 200:
+                    labels.append((f'{item["id"]} {item["name"]}', max(0, x1) + 3, max(0, y1) + 3, "#ff40dc"))
+
+        if "selection" in modes and selection["non_empty"]:
+            x1, y1 = project(selection["x1"], selection["y1"])
+            x2, y2 = project(selection["x2"], selection["y2"])
+            rectangle(max(0, x1), max(0, y1), min(width - 1, x2), min(height - 1, y2),
+                      (255, 220, 0, 255), 3)
+            labels.append(("selection", max(0, x1) + 3, max(0, y1) + 3, "#ffdc00"))
+
+        if "points" in modes:
+            for point in points:
+                x, y = project(point["x"], point["y"])
+                line(x - 7, y, x + 7, y, (255, 70, 70, 255), 3)
+                line(x, y - 7, x, y + 7, (255, 70, 70, 255), 3)
+                point_markers.append((x, y))
+                label = point["label"] or f'{point["x"]:g},{point["y"]:g}'
+                labels.append((label, x + 9, y + 3, "#ff4646"))
+
+        raster = Gimp.Layer.new(image, "Agent render diagnostics", width, height,
+                                Gimp.ImageType.RGBA_IMAGE, 100.0, Gimp.LayerMode.NORMAL)
+        image.insert_layer(raster, None, 0)
+        shadow = raster.get_shadow_buffer()
+        shadow.set(Gegl.Rectangle.new(0, 0, width, height), "R'G'B'A u8", bytes(pixels))
+        shadow.flush()
+        raster.merge_shadow(True)
+        raster.update(0, 0, width, height)
+        # Small opaque bars keep point markers crisp after GIMP composites the diagnostic layers.
+        Gimp.context_push()
+        try:
+            Gimp.context_set_foreground(_make_color("#ff4646"))
+            for x, y in point_markers:
+                for bar_width, bar_height, bar_x, bar_y in ((15, 3, x - 7, y - 1), (3, 15, x - 1, y - 7)):
+                    marker = Gimp.Layer.new(image, "Agent point", bar_width, bar_height,
+                                            Gimp.ImageType.RGBA_IMAGE, 100.0, Gimp.LayerMode.NORMAL)
+                    image.insert_layer(marker, None, 0)
+                    marker.fill(Gimp.FillType.FOREGROUND)
+                    marker.set_offsets(bar_x, bar_y)
+        finally:
+            Gimp.context_pop()
+        font = Gimp.context_get_font()
+        for text, x, y, colour in labels[:200]:
+            label = Gimp.TextLayer.new(image, str(text), font, 12.0, Gimp.Unit.pixel())
+            image.insert_layer(label, None, 0)
+            label.set_color(_make_color(colour))
+            label.set_offsets(max(0, min(width - 1, int(x))), max(0, min(height - 1, int(y))))
+
     def op_render(self, params):
         image = _get_image(params["image_id"]) if params.get("image_id") is not None else None
         if image is None and params.get("layer_id") is not None:
@@ -692,6 +804,20 @@ class Bridge:
         max_size = int(params.get("max_size") or 1024)
         layer_id = params.get("layer_id")
         region = params.get("region")
+        try:
+            overlay, points, grid_size = core.validate_render_overlay(
+                params.get("overlay"), params.get("points"), params.get("grid_size", 100)
+            )
+        except ValueError as exc:
+            raise BridgeError(str(exc)) from exc
+        source_layers = []
+        for item in _flatten_layers(image.get_layers()):
+            if isinstance(item, Gimp.Drawable):
+                ok, x, y = item.get_offsets()
+                source_layers.append({"id": item.get_id(), "name": item.get_name(), "x": x, "y": y,
+                                      "width": item.get_width(), "height": item.get_height()})
+        source_selection = _image_info(image)["selection"]
+        viewport = (0, 0, image.get_width(), image.get_height())
 
         dup = image.duplicate()
         try:
@@ -720,6 +846,7 @@ class Bridge:
                 if x < 0 or y < 0 or w <= 0 or h <= 0 or x + w > dup.get_width() or y + h > dup.get_height():
                     raise BridgeError("region must be a positive rectangle within the image")
                 dup.crop(w, h, x, y)
+                viewport = (x, y, w, h)
             visible = [layer for layer in dup.get_layers() if layer.get_visible()]
             if len(visible) > 1:
                 dup.merge_visible_layers(Gimp.MergeType.CLIP_TO_IMAGE)
@@ -727,6 +854,9 @@ class Bridge:
             if max_size > 0 and max(w, h) > max_size:
                 scale = max_size / float(max(w, h))
                 dup.scale(max(1, int(round(w * scale))), max(1, int(round(h * scale))))
+            if overlay:
+                self._add_render_overlays(dup, overlay, points, grid_size, source_layers, source_selection, viewport)
+                dup.merge_visible_layers(Gimp.MergeType.CLIP_TO_IMAGE)
             fd, tmp = tempfile.mkstemp(prefix="gimp-agent-", suffix=".png")
             os.close(fd)
             try:

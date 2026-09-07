@@ -134,6 +134,9 @@ gimp_measure(kind, image_id or layer_id, ...):
   dominant  k -> top colours with share
 Use bbox to check text fits, to crop to content, or to centre things: x_centre = bbox.x + bbox.width/2.
 gimp_render(region={...}) zooms; gimp_render_compare shows before/after/diff after a gimp_snapshot.
+Diagnostic preview only: gimp_render(overlay=["grid","layers","selection"], grid_size=100,
+points=[{"x":320,"y":180,"label":"target"}]). Coordinates are in source-image pixels, including when
+the preview is cropped or scaled. Overlay pixels and labels are added to a temporary duplicate.
 """
 
 TOPICS["recipes"] = """\

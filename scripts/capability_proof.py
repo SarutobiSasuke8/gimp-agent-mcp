@@ -126,6 +126,29 @@ def run(output: Path):
             return {"selected_layer_ids_verified": True, "ambiguous_focus_not_guessed": True}
         check("document context and ambiguity", context)
 
+        def render_overlays():
+            overlay_image, base_layer = image(320, 240, "#808080")
+            target = call("layer", action="new", image_id=overlay_image, name="Target", width=80, height=60,
+                          x=40, y=30, fill="transparent")
+            call("select", image_id=overlay_image, mode="rect", x=20, y=20, width=40, height=30)
+            before = pixel(base_layer, 100, 80)
+            layer_count = len(call("image_info", image_id=overlay_image)["layers"])
+            rendered = call("render", image_id=overlay_image, max_size=320,
+                            overlay=["grid", "layers", "selection"], grid_size=100,
+                            points=[{"x": 100, "y": 80, "label": "target"}])
+            path = output / "diagnostic-overlay.png"
+            path.write_bytes(base64.b64decode(rendered["png_base64"]))
+            opened = call("open", path=str(path))
+            created.append(opened["id"])
+            marker = pixel(opened["layers"][0]["id"], 100, 80)
+            after = pixel(base_layer, 100, 80)
+            assert marker == "#ff4646", marker
+            assert after == before, (before, after)
+            assert len(call("image_info", image_id=overlay_image)["layers"]) == layer_count
+            assert target["x"] == 40 and target["y"] == 30
+            return {"point_pixel": marker, "source_pixel_unchanged": True, "source_layers_unchanged": True}
+        check("diagnostic render overlays preserve the source", render_overlays)
+
         def render_group():
             fixture = call("exec", code="""img=Gimp.Image.new(32,32,Gimp.ImageBaseType.RGB)
 group=Gimp.GroupLayer.new(img,'Hidden parent');img.insert_layer(group,None,0)

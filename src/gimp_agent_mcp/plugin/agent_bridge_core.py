@@ -8,6 +8,7 @@ tests, so everything here has to run on a plain Python interpreter.
 from __future__ import annotations
 
 import json
+import math
 import os
 import re
 import secrets
@@ -22,6 +23,40 @@ PROCEDURE_NAME = "plug-in-gimp-agent-bridge"
 
 # Default request timeout in seconds. Large images and slow filters can take a while.
 DEFAULT_TIMEOUT = 180.0
+RENDER_OVERLAYS = {"grid", "layers", "selection", "points"}
+
+
+def validate_render_overlay(overlay, points=None, grid_size=100):
+    """Validate and normalise diagnostic-render arguments without importing GIMP."""
+    if overlay is None:
+        overlay = []
+    if not isinstance(overlay, list) or any(not isinstance(value, str) for value in overlay):
+        raise ValueError("overlay must be a list of strings")
+    overlay = list(dict.fromkeys(value.lower() for value in overlay))
+    unknown = sorted(set(overlay) - RENDER_OVERLAYS)
+    if unknown:
+        allowed = ", ".join(sorted(RENDER_OVERLAYS))
+        raise ValueError(f"unknown render overlay(s): {', '.join(unknown)}; use {allowed}")
+    grid_size = int(grid_size)
+    if not 10 <= grid_size <= 2000:
+        raise ValueError("grid_size must be between 10 and 2000 source pixels")
+    points = points or []
+    if not isinstance(points, list) or len(points) > 100:
+        raise ValueError("points must be a list with at most 100 entries")
+    clean_points = []
+    for point in points:
+        if not isinstance(point, dict) or "x" not in point or "y" not in point:
+            raise ValueError("each point needs numeric x and y values")
+        x, y = float(point["x"]), float(point["y"])
+        if not math.isfinite(x) or not math.isfinite(y):
+            raise ValueError("point coordinates must be finite")
+        label = str(point.get("label", ""))
+        if len(label) > 80:
+            raise ValueError("point labels must be at most 80 characters")
+        clean_points.append({"x": x, "y": y, "label": label})
+    if clean_points and "points" not in overlay:
+        overlay.append("points")
+    return overlay, clean_points, grid_size
 
 _NAMED_COLORS: dict[str, tuple[float, float, float]] = {
     "black": (0.0, 0.0, 0.0),

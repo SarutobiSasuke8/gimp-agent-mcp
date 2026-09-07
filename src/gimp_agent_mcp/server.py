@@ -178,9 +178,13 @@ def gimp_render(
     layer_id: int | None = None,
     max_size: int = 1024,
     region: dict[str, int] | None = None,
+    overlay: list[str] | None = None,
+    points: list[dict[str, Any]] | None = None,
+    grid_size: int = 100,
 ) -> Image:
-    """Render the current state of an image as a PNG you can see. Optional layer_id isolates one layer; region={x,y,width,height} crops before scaling."""
-    result = _call("render", {"image_id": image_id, "layer_id": layer_id, "max_size": max_size, "region": region})
+    """Render an image as PNG. layer_id isolates a layer; region crops. Diagnostic overlays may include grid, layers, selection and points. points=[{"x": 100, "y": 80, "label": "target"}]. Overlays affect only the returned preview."""
+    result = _call("render", {"image_id": image_id, "layer_id": layer_id, "max_size": max_size,
+                              "region": region, "overlay": overlay, "points": points, "grid_size": grid_size})
     data = base64.b64decode(result["png_base64"])
     return Image(data=data, format="png")
 

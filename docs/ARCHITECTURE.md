@@ -68,7 +68,7 @@ Names are matched with dashes and underscores interchangeable. Unknown argument 
 
 ## Render
 
-`render` duplicates the image, optionally isolates one layer by position, crops to a region, merges visible layers, scales to `max_size`, exports PNG to a temp file, reads it back and deletes both. The original image is never modified.
+`render` duplicates the image, optionally isolates one layer by position, crops to a region, merges visible layers and scales to `max_size`. Diagnostic overlays are drawn on that temporary duplicate after scaling, so grid labels remain legible and the original image is never modified. The duplicate is exported to a temporary PNG, read back and deleted.
 
 ## Recipes
 

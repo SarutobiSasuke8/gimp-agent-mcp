@@ -13,7 +13,7 @@ uv run python scripts/capability_proof.py ./proof-output
 
 Set both `GIMP3_DIRECTORY` and `GIMP_AGENT_CONFIG_DIR` to the same disposable profile before installation when testing alongside a user's GIMP. Give that profile its own `GIMP_AGENT_BRIDGE_FILE`. The Linux CI does this automatically. Use a fresh output directory for sprite proofs, which refuse overwrites by default.
 
-The normal smoke covers images, discovery, filters, colour/bounds measurements, snapshots, masks, layers, text, paths, exports and recipes. The capability proof writes `report.json` with the actual GIMP version, each result, timing and measured values. Linux CI uploads this report and the launch log. The optional segmentation check downloads a model and runs only with `smoke --segmentation`.
+The normal smoke covers images, discovery, filters, colour/bounds measurements, snapshots, masks, layers, text, paths, exports and recipes. The capability proof writes `report.json` with the actual GIMP version, each result, timing and measured values. It also renders diagnostic grid/layer/selection/point overlays, reopens the PNG, measures the point marker and confirms the source pixel and layer count did not change. Linux CI uploads this report and the launch log. The optional segmentation check downloads a model and runs only with `smoke --segmentation`.
 
 ## GUI undo proof
 
