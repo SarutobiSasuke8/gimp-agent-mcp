@@ -15,7 +15,7 @@ import secrets
 import time
 from typing import Any
 
-BRIDGE_VERSION = "0.4.0"
+BRIDGE_VERSION = "0.5.0"
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 9877
 BRIDGE_FILE_NAME = "agent-bridge.json"

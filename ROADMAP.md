@@ -15,6 +15,12 @@ Live image/region previews, pixel measurements, before/after/diff renders, selec
 - Real Linux GIMP CI, release gates for both platforms, and a launch-environment fix for uv/Python GI interference.
 - Demo, examples and release metadata consistency.
 
+## 0.5.0
+
+- Diagnostic preview overlays for coordinate grids, layer bounds, selection bounds and labelled points without changing the source image.
+- `gimp_adjust`, `gimp_canvas` and `gimp_draw`, covering 23 common actions with installed-operation descriptions and real-GIMP checks.
+- GIMP discovery and release-gate validation on macOS 15 for Apple Silicon and Intel, alongside Windows and Linux.
+
 ## Path beyond the current competitor
 
 The comparison target is [maorcc/gimp-mcp](https://github.com/maorcc/gimp-mcp). Its strength is broad, approachable named tools and a continuous narrated demo. Our strength is editable output, runtime discovery, measured verification, recovery behaviour and repeatable asset jobs. The roadmap closes the everyday-use gaps while preserving those strengths. Tool count alone is not the target.

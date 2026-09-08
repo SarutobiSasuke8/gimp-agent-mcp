@@ -3,7 +3,7 @@
   "name": "gimp-agent-mcp",
   "displayName": "GIMP Agent MCP",
   "description": "Editable GIMP 3 workflows for AI agents: live previews, grouped edits, pixel measurement and recipes.",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "author": {
     "name": "SarutobiSasuke8",
     "url": "https://github.com/SarutobiSasuke8"

@@ -134,7 +134,7 @@ gimp_render(image_id=3, overlay=["grid", "layers", "selection"], grid_size=100,
 
 ## Tested scope and limits
 
-Version **0.4.0**, beta. The current development branch passes the real-GIMP smoke suite and targeted capability proof with Windows GIMP **3.2.4**, Linux GIMP **3.2.2** (Ubuntu 26.04), and macOS 15 GIMP **3.2.4** on Apple Silicon and Intel. The published 0.4.0 package predates the macOS, render-overlay and everyday-editing changes on this branch. GIMP 2.10 is unsupported; earlier 3.x releases are not part of the current test matrix.
+Version **0.5.0**, beta. Tested with Windows GIMP **3.2.4**, Linux GIMP **3.2.2** (Ubuntu 26.04), and macOS 15 GIMP **3.2.4** on Apple Silicon and Intel. Each platform runs the full smoke suite, targeted capability proof and all 23 everyday editing actions against real GIMP. GIMP 2.10 is unsupported; earlier 3.x releases are not part of the current test matrix.
 
 - `gimp_edit_batch` accepts bounded layer, text, selection, path, mask and filter edits. It does not keep a transaction open between separate agent calls or automatically roll back a failed batch. The human uses GIMP's Undo/Redo; there is no invented programmatic undo endpoint.
 - Some GEGL source operations, including linear gradients, are not drawable filters. Use the PDB gradient-fill procedure instead. Vector warp/liquify parity is not claimed.

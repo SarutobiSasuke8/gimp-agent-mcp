@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-09-08
+
 ### Added
 
 - Diagnostic `gimp_render` overlays for source-coordinate grids, layer bounds and labels, selection bounds and labelled points. Overlays are drawn only on the temporary render duplicate.
