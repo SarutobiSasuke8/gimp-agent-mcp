@@ -2,6 +2,8 @@
 
 **Let your AI agent edit in GIMP. Keep the layers. See what changed.**
 
+![GIMP Agent MCP v0.5.0: your AI agent now works in GIMP](docs/gimp-agent-mcp-v0.5-launch.png)
+
 [![CI](https://github.com/SarutobiSasuke8/gimp-agent-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/SarutobiSasuke8/gimp-agent-mcp/actions/workflows/ci.yml)
 [![Windows GIMP](https://github.com/SarutobiSasuke8/gimp-agent-mcp/actions/workflows/live-windows.yml/badge.svg)](https://github.com/SarutobiSasuke8/gimp-agent-mcp/actions/workflows/live-windows.yml)
 [![Linux GIMP](https://github.com/SarutobiSasuke8/gimp-agent-mcp/actions/workflows/live-linux.yml/badge.svg)](https://github.com/SarutobiSasuke8/gimp-agent-mcp/actions/workflows/live-linux.yml)
