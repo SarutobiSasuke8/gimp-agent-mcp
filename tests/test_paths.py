@@ -9,6 +9,7 @@ def test_config_dir_picks_newest_3x(tmp_path, monkeypatch):
     for name in ("2.10", "3.0", "3.2", "3.10", "junk"):
         (root / name).mkdir(parents=True)
     monkeypatch.delenv("GIMP_AGENT_CONFIG_DIR", raising=False)
+    monkeypatch.delenv("GIMP_AGENT_BRIDGE_FILE", raising=False)
     monkeypatch.setattr(paths, "candidate_config_roots", lambda: [root])
     assert paths.gimp_config_dir() == root / "3.10"
     assert paths.bridge_file() == root / "3.10" / core.BRIDGE_FILE_NAME
@@ -22,6 +23,7 @@ def test_config_dir_env_override(tmp_path, monkeypatch):
 
 def test_config_dir_none_when_absent(tmp_path, monkeypatch):
     monkeypatch.delenv("GIMP_AGENT_CONFIG_DIR", raising=False)
+    monkeypatch.delenv("GIMP_AGENT_BRIDGE_FILE", raising=False)
     monkeypatch.setattr(paths, "candidate_config_roots", lambda: [tmp_path / "missing"])
     assert paths.gimp_config_dir() is None
     assert paths.bridge_file() is None
@@ -71,3 +73,20 @@ def test_gimp_exe_env_override(tmp_path, monkeypatch):
     monkeypatch.setenv("GIMP_AGENT_GIMP_EXE", str(exe))
     found = paths.find_gimp()
     assert found.gui == Path(exe)
+
+
+def test_macos_finds_homebrew_command_wrapper(tmp_path, monkeypatch):
+    wrapper = tmp_path / "gimp"
+    wrapper.write_bytes(b"")
+    monkeypatch.delenv("GIMP_AGENT_GIMP_EXE", raising=False)
+    monkeypatch.setattr(paths.platform, "system", lambda: "Darwin")
+    monkeypatch.setattr(paths.shutil, "which", lambda name: str(wrapper) if name == "gimp" else None)
+    found = paths.find_gimp()
+    assert found.gui == wrapper
+    assert found.console is None
+
+
+def test_macos_config_root_uses_application_support(tmp_path, monkeypatch):
+    monkeypatch.setattr(paths.platform, "system", lambda: "Darwin")
+    monkeypatch.setattr(paths.Path, "home", lambda: tmp_path)
+    assert paths.candidate_config_roots() == [tmp_path / "Library" / "Application Support" / "GIMP"]

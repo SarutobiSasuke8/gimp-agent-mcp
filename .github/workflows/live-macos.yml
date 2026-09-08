@@ -1,0 +1,59 @@
+name: Live smoke (macOS + GIMP 3)
+
+on:
+  push:
+    branches: [main, 'codex/**']
+  pull_request:
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  live:
+    name: Real GIMP 3 smoke (${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            arch: arm64
+          - runner: macos-15-intel
+            arch: x86_64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    env:
+      GIMP3_DIRECTORY: /tmp/gimp-agent-profile
+      GIMP_AGENT_CONFIG_DIR: /tmp/gimp-agent-profile
+      GIMP_AGENT_BRIDGE_FILE: /tmp/gimp-agent-profile/agent-bridge.json
+      GIMP_AGENT_PORT: "23877"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - name: Install official GIMP app through Homebrew
+        run: |
+          brew install --cask gimp
+          test -d /Applications/GIMP.app
+          file /Applications/GIMP.app/Contents/MacOS/* | head -20
+      - name: Install project and bridge
+        run: |
+          uv sync --extra dev --python 3.12
+          mkdir -p "$GIMP_AGENT_CONFIG_DIR"
+          uv run gimp-agent-mcp install-plugin
+          uv run gimp-agent-mcp doctor
+      - name: Headless smoke test
+        run: uv run gimp-agent-mcp smoke --mode headless
+      - name: Targeted capability proof
+        run: |
+          uv run python scripts/capability_proof.py proof-output
+          uv run python scripts/everyday_proof.py proof-output
+      - name: Upload capability evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-gimp-proof-${{ matrix.arch }}
+          path: |
+            proof-output/*.json
+            /tmp/gimp-agent-profile/gimp-agent-launch.log
+          if-no-files-found: ignore

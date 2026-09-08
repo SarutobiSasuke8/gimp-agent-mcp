@@ -38,10 +38,11 @@ jobs:
         run: |
           dbus-run-session -- xvfb-run -a uv run gimp-agent-mcp smoke
           dbus-run-session -- xvfb-run -a uv run python scripts/capability_proof.py /tmp/gimp-proof
+          dbus-run-session -- xvfb-run -a uv run python scripts/everyday_proof.py /tmp/gimp-proof
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: linux-gimp-proof
           path: |
             /tmp/gimp-agent-profile/gimp-agent-launch.log
-            /tmp/gimp-proof/report.json
+            /tmp/gimp-proof/*.json

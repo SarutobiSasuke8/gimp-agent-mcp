@@ -38,13 +38,15 @@ jobs:
           GIMP_AGENT_LIVE: "1"
         run: uv run gimp-agent-mcp smoke --mode headless
       - name: Targeted capability proof
-        run: uv run python scripts/capability_proof.py proof-output
+        run: |
+          uv run python scripts/capability_proof.py proof-output
+          uv run python scripts/everyday_proof.py proof-output
       - name: Upload capability report
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: windows-gimp-proof
-          path: proof-output/report.json
+          path: proof-output/*.json
           if-no-files-found: ignore
       - name: Upload launch log on failure
         if: failure()

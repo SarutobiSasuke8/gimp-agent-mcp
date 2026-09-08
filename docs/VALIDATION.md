@@ -9,17 +9,26 @@ uv run ruff check .
 uv run pytest
 uv run gimp-agent-mcp smoke
 uv run python scripts/capability_proof.py ./proof-output
+uv run python scripts/everyday_proof.py ./proof-output
 ```
 
 Set both `GIMP3_DIRECTORY` and `GIMP_AGENT_CONFIG_DIR` to the same disposable profile before installation when testing alongside a user's GIMP. Give that profile its own `GIMP_AGENT_BRIDGE_FILE`. The Linux CI does this automatically. Use a fresh output directory for sprite proofs, which refuse overwrites by default.
 
-The normal smoke covers images, discovery, filters, colour/bounds measurements, snapshots, masks, layers, text, paths, exports and recipes. The capability proof writes `report.json` with the actual GIMP version, each result, timing and measured values. Linux CI uploads this report and the launch log. The optional segmentation check downloads a model and runs only with `smoke --segmentation`.
+The normal smoke covers images, discovery, filters, colour/bounds measurements, snapshots, masks, layers, text, paths, exports and recipes. The capability proof writes `report.json` with the actual GIMP version, each result, timing and measured values. It also renders diagnostic grid/layer/selection/point overlays, reopens the PNG, measures the point marker and confirms the source pixel and layer count did not change. `everyday_proof.py` writes `everyday-report.json`; it executes all nine adjustment actions, seven canvas actions and seven drawing actions after resolving their installed GEGL/PDB descriptions, then records output dimensions, layer counts or measured pixels. CI uploads both reports and the launch log. The optional segmentation check downloads a model and runs only with `smoke --segmentation`.
 
 ## GUI undo proof
 
 `scripts/gui_demo.py create OUT_DIR` creates the example via real MCP stdio. `edit` changes three text layers through `gimp_edit_batch`, exports a PNG and saves an XCF. Press Ctrl+Z in that document; `verify-undo` reads the text back through MCP and asserts that all three edits were reverted. Ctrl+Y restores the batch. Run the script from the repository virtualenv with the intended bridge environment.
 
 The README GIF and MP4 are a labelled sequence of captured GIMP window states, with pauses shortened. They are not an uncut recording of model deliberation. Their assets are original procedural GIMP text and shapes.
+
+## Platform matrix
+
+- Windows: GIMP 3.2.4 on the GitHub-hosted Windows runner.
+- Linux: GIMP 3.2.2 from Ubuntu 26.04, inside Xvfb and a D-Bus session.
+- macOS: GIMP 3.2.4 installed from the Homebrew cask on macOS 15 Apple Silicon and Intel runners. Both architectures run the headless smoke and targeted capability proof against isolated profiles.
+
+Release publication waits for all three platform workflows. These automated checks establish headless plug-in discovery, bridge communication and operations. A hosted runner does not replace a manual check of visible window focus or native keyboard shortcuts.
 
 ## Comparison scope
 

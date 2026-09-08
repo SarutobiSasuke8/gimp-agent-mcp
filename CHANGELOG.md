@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-09-08
+
+### Added
+
+- Diagnostic `gimp_render` overlays for source-coordinate grids, layer bounds and labels, selection bounds and labelled points. Overlays are drawn only on the temporary render duplicate.
+- A competitor-gap roadmap organised around visual precision, everyday editing, reusable assets and long-job/platform confidence.
+- Real-GIMP macOS validation for Apple Silicon and Intel, plus Homebrew command-wrapper discovery.
+- `gimp_adjust`, `gimp_canvas` and `gimp_draw`: 23 common adjustment, transform, fill and drawing actions that resolve and return their installed GEGL/PDB operation without requiring discovery calls. A dedicated real-GIMP proof runs every action on every supported platform.
+
 ## [0.4.0] - 2026-09-07
 
 ### Added

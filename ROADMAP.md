@@ -15,12 +15,54 @@ Live image/region previews, pixel measurements, before/after/diff renders, selec
 - Real Linux GIMP CI, release gates for both platforms, and a launch-environment fix for uv/Python GI interference.
 - Demo, examples and release metadata consistency.
 
-## Next useful work
+## 0.5.0
 
-1. [Render overlays](https://github.com/SarutobiSasuke8/gimp-agent-mcp/issues/3): coordinates, layer boxes and selection bounds, without changing source artwork.
-2. [Cancellation and progress](https://github.com/SarutobiSasuke8/gimp-agent-mcp/issues/5): cancellable stages for batch jobs; distinguish this from interrupting an in-flight GIMP filter.
-3. [Brand kits](https://github.com/SarutobiSasuke8/gimp-agent-mcp/issues/4): named fonts, colours and layout defaults for compose, with missing-token validation.
-4. Broader sprite inputs and padding; focus-aware social crops; a separately validated warp workflow.
-5. macOS validation and fresh-install reports from users.
+- Diagnostic preview overlays for coordinate grids, layer bounds, selection bounds and labelled points without changing the source image.
+- `gimp_adjust`, `gimp_canvas` and `gimp_draw`, covering 23 common actions with installed-operation descriptions and real-GIMP checks.
+- GIMP discovery and release-gate validation on macOS 15 for Apple Silicon and Intel, alongside Windows and Linux.
 
-These are follow-ups, not claims in the launch copy. Keep runtime checks and editable output ahead of adding convenience wrappers for their own sake. Work items remain in [GitHub issues](https://github.com/SarutobiSasuke8/gimp-agent-mcp/issues).
+## Path beyond the current competitor
+
+The comparison target is [maorcc/gimp-mcp](https://github.com/maorcc/gimp-mcp). Its strength is broad, approachable named tools and a continuous narrated demo. Our strength is editable output, runtime discovery, measured verification, recovery behaviour and repeatable asset jobs. The roadmap closes the everyday-use gaps while preserving those strengths. Tool count alone is not the target.
+
+### Milestone 1: visual precision and shared context
+
+- [Render overlays](https://github.com/SarutobiSasuke8/gimp-agent-mcp/issues/3): coordinate grid, layer bounds, selection bounds and labelled points on preview copies. No source pixels change.
+- [Focused document context](https://github.com/SarutobiSasuke8/gimp-agent-mcp/issues/6): pursue a verified display API route. Keep explicit image selection as the safe fallback when GIMP cannot report focus reliably.
+- [Continuous agent demo](https://github.com/SarutobiSasuke8/gimp-agent-mcp/issues/7): show prompt, visible edits, inspection and one-step undo in a single capture.
+
+Exit evidence: overlay geometry agrees with measured bounds, source pixels compare unchanged, and the visible workflow is reproducible.
+
+### Milestone 2: everyday editing ergonomics
+
+- [x] [Everyday editing tools](https://github.com/SarutobiSasuke8/gimp-agent-mcp/issues/8): `gimp_adjust` covers brightness/contrast, hue/saturation, curves, desaturate, invert, blur, sharpen, noise and pixelate.
+- [x] `gimp_canvas` covers scale, crop, canvas resize, rotate, flip, merge-visible and flatten.
+- [x] `gimp_draw` covers layer/selection fills and simple line/rectangle/ellipse fills and outlines, using shared colour and coordinate conventions.
+- Keep generic PDB/GEGL access available for the long tail. Every convenience action must map to a described runtime operation and carry a live regression check.
+
+Exit evidence: `scripts/everyday_proof.py` resolves all 23 actions before execution and records dimensions, layer counts or measured pixels against real GIMP. A new user can complete the competitor README's common examples without discovering procedure names or writing Python.
+
+### Milestone 3: reusable asset pipelines
+
+- [Brand kits](https://github.com/SarutobiSasuke8/gimp-agent-mcp/issues/4): named colours, fonts, assets and canvases for compose, with validation before rendering.
+- [Broader asset workflows](https://github.com/SarutobiSasuke8/gimp-agent-mcp/issues/9): sprite padding, mixed-size packing and direct open-layer inputs. Preserve pixel verification and layered XCF output.
+- In the same issue, add social crop/export profiles with focus-aware crops rather than a list of fixed dimensions alone.
+- Investigate and validate a warp/liquify workflow separately before claiming parity.
+
+Exit evidence: token and inline manifests render identically, atlas coordinates and padding verify, and every preset produces measured dimensions.
+
+### Milestone 4: long jobs and platform confidence
+
+- [Cancellation and progress](https://github.com/SarutobiSasuke8/gimp-agent-mcp/issues/5): staged job progress first, then cancellation only for operations GIMP can safely interrupt.
+- [macOS installation and live GIMP validation](https://github.com/SarutobiSasuke8/gimp-agent-mcp/issues/10): Apple Silicon and Intel both pass GIMP 3.2.4 smoke and the targeted capability proof on macOS 15. A manual visible-window check remains useful for native focus and keyboard behaviour.
+- Fresh-install reports from users, plus upgrade checks for the plug-in/server version mismatch path.
+
+Exit evidence: long jobs expose honest state, cancellation leaves a consistent document, and the supported-platform table is backed by repeatable runs.
+
+### Decision rules
+
+- Prioritise fewer, reliable operations over matching a headline tool count.
+- Preserve the loopback/token boundary and thread-free GIMP plug-in.
+- Keep source documents editable; diagnostics operate on duplicates.
+- Add public claims only after a real-GIMP proof exists.
+- A milestone may ship independently once its exit evidence passes.

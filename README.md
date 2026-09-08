@@ -2,9 +2,12 @@
 
 **Let your AI agent edit in GIMP. Keep the layers. See what changed.**
 
+![GIMP Agent MCP v0.5.0: your AI agent now works in GIMP](docs/gimp-agent-mcp-v0.5-launch.png)
+
 [![CI](https://github.com/SarutobiSasuke8/gimp-agent-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/SarutobiSasuke8/gimp-agent-mcp/actions/workflows/ci.yml)
 [![Windows GIMP](https://github.com/SarutobiSasuke8/gimp-agent-mcp/actions/workflows/live-windows.yml/badge.svg)](https://github.com/SarutobiSasuke8/gimp-agent-mcp/actions/workflows/live-windows.yml)
 [![Linux GIMP](https://github.com/SarutobiSasuke8/gimp-agent-mcp/actions/workflows/live-linux.yml/badge.svg)](https://github.com/SarutobiSasuke8/gimp-agent-mcp/actions/workflows/live-linux.yml)
+[![macOS GIMP](https://github.com/SarutobiSasuke8/gimp-agent-mcp/actions/workflows/live-macos.yml/badge.svg)](https://github.com/SarutobiSasuke8/gimp-agent-mcp/actions/workflows/live-macos.yml)
 [![PyPI](https://img.shields.io/pypi/v/gimp-agent-mcp)](https://pypi.org/project/gimp-agent-mcp/)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 
@@ -79,9 +82,10 @@ Use `gimp_context(image_id)` to read selected layers and selection bounds. With 
 
 | Capability | What you get |
 |---|---|
-| Visual feedback | Whole-image, layer and region previews; saved snapshots; before/after/diff comparisons. Nested-layer previews preserve the parent visibility needed to see the layer. |
+| Visual feedback | Whole-image, layer and region previews; saved snapshots; before/after/diff comparisons. Diagnostic overlays can add a coordinate grid, layer boxes, selection bounds and labelled points without changing the source. |
 | Measured output | Pixel colours, alpha bounds, histograms and dominant colours. Sprite packing reopens the exported PNG and compares each cell's decoded RGBA pixels with its source. |
 | Editable work | Named layers, text, paths, masks and non-destructive layer effects. Export an XCF master and delivery files separately. |
+| Everyday editing | Three compact tools cover common adjustments, canvas transforms, fills and simple drawing. Every action reports the installed GEGL or PDB operation it used. |
 | One undo step | `gimp_edit_batch` groups supported edits on one image into one Ctrl+Z step. A failed step stops the batch, reports partial results and closes the group. |
 | Runtime discovery | Search and describe the installed PDB procedures and GEGL operations, including parameter names, types and enum values. Numeric-array arguments support curves and brush strokes. |
 | Repeatable jobs | Nine recipes and folder batching, plus three bundled workflow skills. |
@@ -89,7 +93,7 @@ Use `gimp_context(image_id)` to read selected layers and selection bounds. With 
 
 Other GIMP MCP projects also provide TCP bridges and visual feedback. This project's emphasis is editable output, measurement, grouped edits and reproducible validation. Generic API access is broad, but does not guarantee that every GIMP procedure or GEGL operation works with every argument combination.
 
-## Tools (36)
+## Tools (39)
 
 | Area | Tools |
 |---|---|
@@ -98,11 +102,21 @@ Other GIMP MCP projects also provide TCP bridges and visual feedback. This proje
 | See and measure | `gimp_render`, `gimp_snapshot`, `gimp_drop_snapshot`, `gimp_render_compare`, `gimp_measure` |
 | PDB | `gimp_pdb_search`, `gimp_pdb_describe`, `gimp_pdb_call` |
 | Filters | `gimp_filter_search`, `gimp_filter_describe`, `gimp_apply_filter`, `gimp_layer_effects`, `gimp_layer_effect` |
-| Edit | `gimp_edit_batch`, `gimp_select`, `gimp_layer_mask`, `gimp_layer`, `gimp_text`, `gimp_list_fonts`, `gimp_path` |
+| Everyday edits | `gimp_adjust`, `gimp_canvas`, `gimp_draw` |
+| Structured edit | `gimp_edit_batch`, `gimp_select`, `gimp_layer_mask`, `gimp_layer`, `gimp_text`, `gimp_list_fonts`, `gimp_path` |
 | Cut out | `gimp_remove_background` (optional rembg model runtime) |
 | Automate | `gimp_run_python`, `gimp_list_recipes`, `gimp_run_recipe`, `gimp_batch_recipe` |
 
 Images and items use integer IDs. Colours accept hex, common names, CSS RGB strings or component arrays; enums use nicks returned by the describe tools. Call `gimp_help("batch")` for grouped-edit examples. `gimp_run_python` may be disabled, reducing the tool count by one.
+
+Common work no longer needs procedure discovery. For example, use `gimp_adjust(layer_id, "brightness_contrast", {"brightness": 0.15})`, `gimp_canvas(image_id, "crop", width=1200, height=630, x=40, y=20)`, or `gimp_draw(image_id, layer_id, "line", color="#ffffff", x=20, y=40, x2=300, y2=40, line_width=6)`. Adjustments default to editable layer effects where GIMP supports them; canvas and drawing actions bake pixels or structure. Every result identifies the runtime operation selected before execution.
+
+For visual placement, ask for a diagnostic preview without marking the working image:
+
+```text
+gimp_render(image_id=3, overlay=["grid", "layers", "selection"], grid_size=100,
+            points=[{"x": 600, "y": 340, "label": "headline centre"}])
+```
 
 ## Recipes
 
@@ -122,12 +136,12 @@ Images and items use integer IDs. Colours accept hex, common names, CSS RGB stri
 
 ## Tested scope and limits
 
-Version **0.4.0**, beta. Windows GIMP **3.2.4** and Linux GIMP **3.2.2** (Ubuntu 26.04) pass the real-GIMP smoke suite and targeted capability proof. macOS remains unverified. GIMP 2.10 is unsupported; earlier 3.x releases are not part of the current test matrix.
+Version **0.5.0**, beta. Tested with Windows GIMP **3.2.4**, Linux GIMP **3.2.2** (Ubuntu 26.04), and macOS 15 GIMP **3.2.4** on Apple Silicon and Intel. Each platform runs the full smoke suite, targeted capability proof and all 23 everyday editing actions against real GIMP. GIMP 2.10 is unsupported; earlier 3.x releases are not part of the current test matrix.
 
 - `gimp_edit_batch` accepts bounded layer, text, selection, path, mask and filter edits. It does not keep a transaction open between separate agent calls or automatically roll back a failed batch. The human uses GIMP's Undo/Redo; there is no invented programmatic undo endpoint.
 - Some GEGL source operations, including linear gradients, are not drawable filters. Use the PDB gradient-fill procedure instead. Vector warp/liquify parity is not claimed.
 - Sprite packing currently takes equal-sized PNG files, without padding or direct open-layer input. It does not align animation or pack mixed-size rectangles.
-- Long filters are synchronous. Mid-filter cancellation, progress reporting and render overlays remain follow-up work.
+- Long filters are synchronous. Mid-filter cancellation and progress reporting remain follow-up work.
 
 ## Verify your setup
 
@@ -136,9 +150,10 @@ uvx gimp-agent-mcp smoke
 # From the source checkout:
 uv run pytest
 uv run python scripts/capability_proof.py /path/to/proof-output
+uv run python scripts/everyday_proof.py /path/to/proof-output
 ```
 
-CI checks Linux and Windows Python, and separate jobs exercise real GIMP. Release publication depends on both real-GIMP workflows passing. The capability proof measures curves, gradients and brush output and checks batch recovery, document boundaries, nested previews and snapshot cleanup. It is targeted regression evidence, not exhaustive competitor parity. See [validation details](docs/VALIDATION.md).
+CI checks supported Python versions, and separate jobs exercise real GIMP on Windows, Linux and both macOS architectures. Release publication depends on all three real-GIMP workflows passing. The general capability proof measures curves, gradients and brush output and checks batch recovery, document boundaries, diagnostic overlays, nested previews and snapshot cleanup. A second proof resolves and exercises every action in `gimp_adjust`, `gimp_canvas` and `gimp_draw`, recording dimensions, layer counts and measured pixels. See [validation details](docs/VALIDATION.md).
 
 ## Architecture and trust
 
