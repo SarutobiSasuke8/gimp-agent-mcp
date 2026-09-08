@@ -45,13 +45,15 @@ jobs:
       - name: Headless smoke test
         run: uv run gimp-agent-mcp smoke --mode headless
       - name: Targeted capability proof
-        run: uv run python scripts/capability_proof.py proof-output
+        run: |
+          uv run python scripts/capability_proof.py proof-output
+          uv run python scripts/everyday_proof.py proof-output
       - name: Upload capability evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: macos-gimp-proof-${{ matrix.arch }}
           path: |
-            proof-output/report.json
+            proof-output/*.json
             /tmp/gimp-agent-profile/gimp-agent-launch.log
           if-no-files-found: ignore

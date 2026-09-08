@@ -250,6 +250,83 @@ def gimp_apply_filter(
     )
 
 
+_ADJUST_FILTERS: dict[str, tuple[str, dict[str, Any]]] = {
+    "brightness_contrast": ("gegl:brightness-contrast", {}),
+    "hue_saturation": ("gegl:hue-chroma", {}),
+    "desaturate": ("gegl:saturation", {"scale": 0.0}),
+    "invert": ("gegl:invert-gamma", {}),
+    "blur": ("gegl:gaussian-blur", {}),
+    "sharpen": ("gegl:unsharp-mask", {}),
+    "noise": ("gegl:noise-rgb", {}),
+    "pixelate": ("gegl:pixelize", {}),
+}
+
+
+def _normalise_adjust_params(action: str, params: dict[str, Any]) -> dict[str, Any]:
+    out = dict(params)
+    if action == "hue_saturation" and "saturation" in out and "chroma" not in out:
+        out["chroma"] = out.pop("saturation")
+    if action == "blur" and "radius" in out:
+        radius = out.pop("radius")
+        out.setdefault("std-dev-x", radius)
+        out.setdefault("std-dev-y", radius)
+    if action == "sharpen":
+        if "radius" in out and "std-dev" not in out:
+            out["std-dev"] = out.pop("radius")
+        if "amount" in out and "scale" not in out:
+            out["scale"] = out.pop("amount")
+    if action == "noise" and "amount" in out:
+        amount = out.pop("amount")
+        for channel in ("red", "green", "blue"):
+            out.setdefault(channel, amount)
+    if action == "pixelate" and "size" in out:
+        size = out.pop("size")
+        out.setdefault("size-x", size)
+        out.setdefault("size-y", size)
+    return out
+
+
+@mcp.tool()
+def gimp_adjust(
+    layer_id: int,
+    action: str,
+    params: dict[str, Any] | None = None,
+    mode: str = "append",
+    name: str | None = None,
+) -> dict[str, Any]:
+    """Common adjustments without discovery. action: brightness_contrast, hue_saturation, curves, desaturate, invert, blur, sharpen, noise, pixelate. mode='append' keeps GEGL actions editable; mode='merge' bakes pixels. curves is destructive and needs params={channel:'value', points:[0,0,1,1]}. Returns the installed operation description used."""
+    action = action.strip().lower().replace("-", "_")
+    values = dict(params or {})
+    if action == "curves":
+        if mode != "merge":
+            raise ToolError("curves currently requires mode='merge'; use a GEGL action for an editable layer effect")
+        procedure = "gimp-drawable-curves-spline"
+        operation = _call("pdb_describe", {"name": procedure})
+        result = _call(
+            "pdb_call",
+            {
+                "name": procedure,
+                "args": {
+                    "drawable": layer_id,
+                    "channel": values.get("channel", "value"),
+                    "points": values.get("points", [0.0, 0.0, 1.0, 1.0]),
+                },
+                "undo_group": True,
+            },
+        )
+        return {"action": action, "route": "pdb", "editable": False, "operation": operation, "result": result}
+    if action not in _ADJUST_FILTERS:
+        raise ToolError(f"unknown adjustment {action!r}; valid: {', '.join([*_ADJUST_FILTERS, 'curves'])}")
+    op, defaults = _ADJUST_FILTERS[action]
+    operation = _call("filter_describe", {"op": op})
+    resolved = {**defaults, **_normalise_adjust_params(action, values)}
+    result = _call(
+        "apply_filter",
+        {"layer_id": layer_id, "op": op, "params": resolved, "mode": mode, "name": name or action.replace("_", " ").title()},
+    )
+    return {"action": action, "route": "gegl", "editable": mode == "append", "operation": operation, "params": resolved, "result": result}
+
+
 @mcp.tool()
 def gimp_layer_effects(layer_id: int) -> list[dict[str, Any]]:
     """List the non-destructive filters currently attached to a layer."""
@@ -344,6 +421,135 @@ def gimp_select(
             "amount": amount,
         },
     )
+
+
+_CANVAS_PROCEDURES = {
+    "scale": "gimp-image-scale",
+    "crop": "gimp-image-crop",
+    "resize": "gimp-image-resize",
+    "rotate": "gimp-image-rotate",
+    "flip": "gimp-image-flip",
+    "merge_visible": "gimp-image-merge-visible-layers",
+    "flatten": "gimp-image-flatten",
+}
+
+
+@mcp.tool()
+def gimp_canvas(
+    image_id: int,
+    action: str,
+    width: int | None = None,
+    height: int | None = None,
+    x: int = 0,
+    y: int = 0,
+    angle: int | None = None,
+    direction: str | None = None,
+    merge_type: str = "clip-to-image",
+) -> dict[str, Any]:
+    """Common canvas operations without PDB discovery. action: scale, crop, resize, rotate (angle 90/180/270), flip (direction horizontal/vertical), merge_visible, flatten. Operations bake pixels or layer structure and return the installed PDB description plus final image info."""
+    action = action.strip().lower().replace("-", "_")
+    if action not in _CANVAS_PROCEDURES:
+        raise ToolError(f"unknown canvas action {action!r}; valid: {', '.join(_CANVAS_PROCEDURES)}")
+    args: dict[str, Any] = {"image": image_id}
+    if action in ("scale", "crop", "resize"):
+        if width is None or height is None or width < 1 or height < 1:
+            raise ToolError(f"{action} needs positive width and height")
+        args.update({"new-width": width, "new-height": height})
+        if action in ("crop", "resize"):
+            args.update({"offx": x, "offy": y})
+    elif action == "rotate":
+        if angle not in (90, 180, 270):
+            raise ToolError("rotate angle must be 90, 180 or 270")
+        args["rotate-type"] = f"degrees{angle}"
+    elif action == "flip":
+        if direction not in ("horizontal", "vertical"):
+            raise ToolError("flip direction must be horizontal or vertical")
+        args["flip-type"] = direction
+    elif action == "merge_visible":
+        args["merge-type"] = merge_type
+    procedure = _CANVAS_PROCEDURES[action]
+    operation = _call("pdb_describe", {"name": procedure})
+    result = _call("pdb_call", {"name": procedure, "args": args, "undo_group": True})
+    return {
+        "action": action,
+        "route": "pdb",
+        "editable": False,
+        "operation": operation,
+        "result": result,
+        "image": _call("image_info", {"image_id": image_id}),
+    }
+
+
+@mcp.tool()
+def gimp_draw(
+    image_id: int,
+    layer_id: int,
+    action: str,
+    color: str = "#000000",
+    x: float | None = None,
+    y: float | None = None,
+    width: float | None = None,
+    height: float | None = None,
+    x2: float | None = None,
+    y2: float | None = None,
+    line_width: float = 2.0,
+    method: str = "paintbrush",
+) -> dict[str, Any]:
+    """Fill or draw without PDB discovery. action: fill_layer, fill_selection, rectangle, ellipse, rectangle_outline, ellipse_outline, line. Colours use the normal CSS/#hex convention; coordinates are image pixels. Shapes clear their temporary selection. Drawing bakes pixels and returns every installed PDB operation used."""
+    action = action.strip().lower().replace("-", "_")
+    valid = ("fill_layer", "fill_selection", "rectangle", "ellipse", "rectangle_outline", "ellipse_outline", "line")
+    if action not in valid:
+        raise ToolError(f"unknown draw action {action!r}; valid: {', '.join(valid)}")
+    shape = action.removesuffix("_outline")
+    if shape in ("rectangle", "ellipse") and (None in (x, y, width, height) or width <= 0 or height <= 0):  # type: ignore[operator]
+        raise ToolError(f"{action} needs x, y and positive width and height")
+    if action == "line" and None in (x, y, x2, y2):
+        raise ToolError("line needs x, y, x2 and y2")
+    if line_width <= 0:
+        raise ToolError("line_width must be positive")
+    paint = None
+    if action == "line":
+        paint = {"paintbrush": "gimp-paintbrush-default", "pencil": "gimp-pencil"}.get(method)
+        if paint is None:
+            raise ToolError("line method must be paintbrush or pencil")
+    previous_foreground = _call("context", {"image_id": image_id})["foreground"]
+    plan: list[tuple[str, dict[str, Any]]] = [("gimp-context-set-foreground", {"foreground": color})]
+    temporary_selection = False
+    if action == "fill_layer":
+        plan.append(("gimp-selection-all", {"image": image_id}))
+        temporary_selection = True
+    elif shape in ("rectangle", "ellipse"):
+        procedure = f"gimp-image-select-{shape}"
+        plan.append(
+            (procedure, {"image": image_id, "operation": "replace", "x": x, "y": y, "width": width, "height": height})
+        )
+        temporary_selection = True
+    if action == "line":
+        plan.append(("gimp-context-set-brush-size", {"size": line_width}))
+        plan.append((paint, {"drawable": layer_id, "strokes": [x, y, x2, y2]}))  # type: ignore[arg-type]
+    elif action.endswith("_outline"):
+        plan.append(("gimp-context-set-line-width", {"line-width": line_width}))
+        plan.append(("gimp-drawable-edit-stroke-selection", {"drawable": layer_id}))
+    else:
+        plan.append(("gimp-drawable-edit-fill", {"drawable": layer_id, "fill-type": "foreground"}))
+    if temporary_selection:
+        plan.append(("gimp-selection-none", {"image": image_id}))
+    restore = ("gimp-context-set-foreground", {"foreground": previous_foreground})
+    descriptions = [_call("pdb_describe", {"name": name}) for name, _args in [*plan, restore]]
+    results = []
+    try:
+        for procedure, args in plan:
+            results.append(_call("pdb_call", {"name": procedure, "args": args, "undo_group": True}))
+    finally:
+        results.append(_call("pdb_call", {"name": restore[0], "args": restore[1], "undo_group": False}))
+    return {
+        "action": action,
+        "route": "pdb",
+        "editable": False,
+        "operations": descriptions,
+        "results": results,
+        "layer": _call("layer", {"action": "info", "layer_id": layer_id}),
+    }
 
 
 @mcp.tool()

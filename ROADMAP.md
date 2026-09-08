@@ -29,12 +29,12 @@ Exit evidence: overlay geometry agrees with measured bounds, source pixels compa
 
 ### Milestone 2: everyday editing ergonomics
 
-- [Everyday editing tools](https://github.com/SarutobiSasuke8/gimp-agent-mcp/issues/8): add a deliberately small `gimp_adjust` surface for the high-frequency operations that are awkward through PDB discovery: brightness/contrast, hue/saturation, curves, desaturate, invert, blur, sharpen, noise and pixelate.
-- In the same issue, add `gimp_canvas` for scale, crop, canvas resize, rotate, flip, merge-visible and flatten.
-- In the same issue, add `gimp_draw` for fills and simple line/rectangle/ellipse drawing, using the same colour and coordinate conventions throughout.
+- [x] [Everyday editing tools](https://github.com/SarutobiSasuke8/gimp-agent-mcp/issues/8): `gimp_adjust` covers brightness/contrast, hue/saturation, curves, desaturate, invert, blur, sharpen, noise and pixelate.
+- [x] `gimp_canvas` covers scale, crop, canvas resize, rotate, flip, merge-visible and flatten.
+- [x] `gimp_draw` covers layer/selection fills and simple line/rectangle/ellipse fills and outlines, using shared colour and coordinate conventions.
 - Keep generic PDB/GEGL access available for the long tail. Every convenience action must map to a described runtime operation and carry a live regression check.
 
-Exit evidence: a new user can complete the competitor README's common examples without discovering procedure names or writing Python.
+Exit evidence: `scripts/everyday_proof.py` resolves all 23 actions before execution and records dimensions, layer counts or measured pixels against real GIMP. A new user can complete the competitor README's common examples without discovering procedure names or writing Python.
 
 ### Milestone 3: reusable asset pipelines
 

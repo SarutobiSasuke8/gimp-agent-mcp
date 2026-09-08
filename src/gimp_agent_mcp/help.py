@@ -19,12 +19,33 @@ HOW TO WORK WITH GIMP THROUGH THIS SERVER
    before | after | diff.
 6. Prefer a recipe when one exists (gimp_list_recipes): stickers, icon sets, web optimisation, watermark,
    contact sheet, sprite slicing, compose-from-manifest. gimp_batch_recipe runs one over a folder.
-7. Filters: gimp_filter_search -> gimp_filter_describe -> gimp_apply_filter. Anything else: gimp_pdb_search ->
+7. Common edits: gimp_adjust, gimp_canvas and gimp_draw choose and describe the installed runtime operation.
+   Filters: gimp_filter_search -> gimp_filter_describe -> gimp_apply_filter. Anything else: gimp_pdb_search ->
    gimp_pdb_describe -> gimp_pdb_call. gimp_run_python for multi-step logic.
 8. Export with gimp_export(image_id, path, options). Extension picks the format. Save working files as .xcf.
 9. Errors tell you what is valid: unknown argument -> valid list; unknown enum -> choices; refused op -> alternative.
 
-Other help topics: batch, filters, colours, text, masks, paths, layers, measure, recipes, compose, errors.
+Other help topics: everyday, batch, filters, colours, text, masks, paths, layers, measure, recipes, compose, errors.
+"""
+
+TOPICS["everyday"] = """\
+EVERYDAY EDITING
+
+gimp_adjust(layer_id, action, params, mode="append"):
+  brightness_contrast, hue_saturation, curves, desaturate, invert, blur, sharpen, noise, pixelate.
+  append keeps GEGL adjustments editable; merge bakes pixels. Curves currently requires merge and accepts
+  channel plus normalized [x,y,...] points. Friendly aliases include radius for blur, amount for sharpen/noise,
+  saturation for hue_saturation and size for pixelate. The result includes the resolved GEGL/PDB description.
+
+gimp_canvas(image_id, action):
+  scale/crop/resize need width and height; crop/resize also accept x and y offsets. rotate accepts angle 90/180/270;
+  flip accepts horizontal/vertical. merge_visible and flatten change layer structure. These operations are destructive.
+
+gimp_draw(image_id, layer_id, action, color, coordinates):
+  fill_layer, fill_selection, rectangle, ellipse, rectangle_outline, ellipse_outline, line. Shapes use x, y, width,
+  height; lines use x, y, x2, y2 and method paintbrush|pencil. line_width controls strokes. Drawing bakes pixels,
+  resolves every PDB procedure before the first mutation, clears temporary shape selections and restores the
+  previous foreground colour. All coordinates are image pixels and colours follow the shared CSS/#hex convention.
 """
 
 TOPICS["filters"] = """\
