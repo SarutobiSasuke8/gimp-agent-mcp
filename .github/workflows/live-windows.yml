@@ -16,8 +16,8 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 25
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v7
       - name: Install GIMP 3 (official Inno installer, silent)
         shell: pwsh
         run: |
@@ -43,14 +43,14 @@ jobs:
           uv run python scripts/everyday_proof.py proof-output
       - name: Upload capability report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: windows-gimp-proof
           path: proof-output/*.json
           if-no-files-found: ignore
       - name: Upload launch log on failure
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: gimp-agent-launch-log
           path: ${{ env.APPDATA }}/GIMP/3.2/gimp-agent-launch.log
