@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- `sprite_atlas_pack`: mixed-size PNG sprites to a padded texture atlas (MaxRects, bottom-left rule) with optional trimming to measured alpha bounds, a width cap and power-of-two sizing. Writes a layered XCF and TexturePacker-style JSON (`frame`, `spriteSourceSize`, `sourceSize`, `trimmed`) that Phaser's `load.atlas` reads. The exported PNG is reopened and every placed rectangle must match its decoded source RGBA exactly, with all padding and unused area transparent.
+- `sprite_atlas_pack` also takes `input_layer_ids`: open, non-group layers packed in place and keyed by layer name, with the same verification. Source documents are read, never modified or closed.
+- `sprite_sheet_pack` takes `margin` and `spacing`, matching `sprite_sheet_slice`, so a spaced sheet slices back to the same frames. Margins and gutters are verified transparent alongside unused cells.
+- Plug-in version check. `doctor`, `gimp_status` and `gimp_launch` report the installed and running bridge versions against the version this server expects, with `bridge_outdated` and an update hint. An `UnknownOp` error now says the plug-in is probably older than the server and how to update it. Previously an upgrade through PyPI left a 0.2.x plug-in in place and newer tools failed with a bare "unknown op".
+
+### Changed
+
+- `scripts/capability_proof.py` stops at the first lost bridge and reports which check GIMP died in, instead of failing every later check with "no bridge token found". The 2026-09-08 macOS arm64 failure on `main` was GIMP exiting during the gradient-fill check; the same commit passed on re-run.
+
 ## [0.5.0] - 2026-09-08
 
 ### Added

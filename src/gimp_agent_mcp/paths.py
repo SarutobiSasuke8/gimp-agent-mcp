@@ -65,6 +65,37 @@ def plugin_install_dir() -> Path | None:
     return cfg / "plug-ins" / "gimp-agent-bridge" if cfg else None
 
 
+_BRIDGE_VERSION_LINE = re.compile(r'^BRIDGE_VERSION\s*=\s*["\']([^"\']+)["\']', re.MULTILINE)
+
+PLUGIN_UPDATE_HINT = (
+    f"The GIMP plug-in does not match this server (expects bridge {core.BRIDGE_VERSION}). "
+    "Run `gimp-agent-mcp install-plugin`, then restart GIMP and the bridge."
+)
+
+
+def installed_plugin_version(install_dir: Path | None = None) -> str | None:
+    """Read BRIDGE_VERSION from the installed plug-in without importing it; None when absent or unreadable."""
+    install_dir = install_dir or plugin_install_dir()
+    if install_dir is None:
+        return None
+    try:
+        match = _BRIDGE_VERSION_LINE.search((install_dir / "agent_bridge_core.py").read_text(encoding="utf-8"))
+    except OSError:
+        return None
+    return match.group(1) if match else None
+
+
+def bridge_freshness(running_version: str | None = None, install_dir: Path | None = None) -> dict[str, object]:
+    """Compare the running bridge (when known) and the installed plug-in with the version this server ships."""
+    installed = installed_plugin_version(install_dir)
+    report: dict[str, object] = {"expected_bridge_version": core.BRIDGE_VERSION, "installed_plugin_version": installed}
+    stale = [v for v in (running_version, installed) if v is not None and v != core.BRIDGE_VERSION]
+    if stale:
+        report["bridge_outdated"] = True
+        report["update_hint"] = PLUGIN_UPDATE_HINT
+    return report
+
+
 @dataclass(frozen=True)
 class GimpExecutables:
     gui: Path | None

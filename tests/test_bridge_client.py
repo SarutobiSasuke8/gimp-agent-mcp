@@ -99,3 +99,17 @@ def test_parallel_mcp_calls_do_not_interleave_on_one_socket(monkeypatch):
     with ThreadPoolExecutor(max_workers=4) as pool:
         assert list(pool.map(c.call, ["a", "b", "c", "d"])) == ["a", "b", "c", "d"]
     assert peak == 1
+
+
+def test_unknown_op_points_at_a_stale_plugin(monkeypatch):
+    from gimp_agent_mcp.bridge_client import BridgeError
+
+    class Reader:
+        def readline(self):
+            req = json.loads(c._wfile.getvalue())
+            return core.encode_message({"id": req["id"], "ok": False, "error": {"type": "UnknownOp", "message": "unknown op 'edit_batch'"}})
+
+    c, _ = attached(monkeypatch, Reader())
+    with pytest.raises(BridgeError, match="install-plugin") as caught:
+        c.call("edit_batch", {})
+    assert caught.value.error_type == "UnknownOp"

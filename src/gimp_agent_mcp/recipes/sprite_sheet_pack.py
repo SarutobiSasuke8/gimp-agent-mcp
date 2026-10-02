@@ -6,6 +6,8 @@ PARAMS = {
     "input_paths": {"type": "array", "required": True, "description": "Ordered, non-empty list of PNG frames with equal canvas sizes"},
     "output_path": {"type": "string", "required": True, "description": "Destination PNG; JSON and XCF use the same stem"},
     "columns": {"type": "integer", "default": 4, "minimum": 1, "description": "Maximum cells per row"},
+    "margin": {"type": "integer", "default": 0, "minimum": 0, "description": "Transparent border on all four sides; matches sprite_sheet_slice"},
+    "spacing": {"type": "integer", "default": 0, "minimum": 0, "description": "Transparent gap between cells; matches sprite_sheet_slice"},
     "keep_open": {"type": "boolean", "default": False, "description": "Keep the layered sheet open after successful verification"},
     "overwrite": {"type": "boolean", "default": False, "description": "Allow replacing existing output PNG, JSON and XCF files"},
 }
@@ -35,8 +37,13 @@ def pack_sheet():
     cols = params["columns"]
     if type(cols) is not int or cols < 1:
         raise ValueError("columns must be a positive integer")
+    margin, spacing = params["margin"], params["spacing"]
+    if type(margin) is not int or margin < 0 or type(spacing) is not int or spacing < 0:
+        raise ValueError("margin and spacing must be non-negative integers")
     cols = min(cols, len(paths))
     rows = (len(paths) + cols - 1) // cols
+    def cell(i):
+        return margin + (i % cols) * (cw + spacing), margin + (i // cols) * (ch + spacing)
     sheet = None
     verified = None
     success = False
@@ -61,8 +68,9 @@ def pack_sheet():
                 w, h = source.get_width(), source.get_height()
                 if sheet is None:
                     cw, ch = w, h
-                    sheet = Gimp.Image.new(cw * cols, ch * rows, Gimp.ImageBaseType.RGB)
-                    base = Gimp.Layer.new(sheet, "Transparent canvas", cw * cols, ch * rows, Gimp.ImageType.RGBA_IMAGE, 100.0, Gimp.LayerMode.NORMAL)
+                    sw, sh = 2 * margin + cols * cw + (cols - 1) * spacing, 2 * margin + rows * ch + (rows - 1) * spacing
+                    sheet = Gimp.Image.new(sw, sh, Gimp.ImageBaseType.RGB)
+                    base = Gimp.Layer.new(sheet, "Transparent canvas", sw, sh, Gimp.ImageType.RGBA_IMAGE, 100.0, Gimp.LayerMode.NORMAL)
                     sheet.insert_layer(base, None, 0)
                     base.fill(Gimp.FillType.TRANSPARENT)
                 elif (w, h) != (cw, ch):
@@ -75,7 +83,7 @@ def pack_sheet():
                 placed = Gimp.Layer.new_from_drawable(layer, sheet)
                 sheet.insert_layer(placed, None, 0)
                 placed.set_name(names[i])
-                x, y = (i % cols) * cw, (i // cols) * ch
+                x, y = cell(i)
                 placed.set_offsets(x, y)
                 # Full cells work in standard atlas loaders, including empty frames.
                 frames[names[i]] = {"frame": {"x": x, "y": y, "w": cw, "h": ch},
@@ -88,7 +96,7 @@ def pack_sheet():
         os.makedirs(os.path.dirname(dst), exist_ok=True)
         export_with(sheet, dst, {"compression": 9, "bkgd": False, "phys": False, "time": False, "include-thumbnail": False})
         verified = Gimp.file_load(Gimp.RunMode.NONINTERACTIVE, Gio.File.new_for_path(dst))
-        if verified is None or (verified.get_width(), verified.get_height()) != (cw * cols, ch * rows):
+        if verified is None or (verified.get_width(), verified.get_height()) != (sw, sh):
             raise RuntimeError("export verification failed: sheet dimensions")
         layer = verified.get_layers()[0]
         if not layer.has_alpha():
@@ -98,15 +106,19 @@ def pack_sheet():
             data = pixels(layer, r["x"], r["y"], cw, ch)
             if hashlib.sha256(data).hexdigest() != hashes[i] or bbox(data, cw, ch) != bounds[i]:
                 raise RuntimeError(f"export verification failed: RGBA pixels differ for {name}")
-        for i in range(len(paths), rows * cols):
-            data = pixels(layer, (i % cols) * cw, (i // cols) * ch, cw, ch)
-            if any(data[3::4]):
-                raise RuntimeError("export verification failed: unused cell is not transparent")
+        # Unused cells, margins and gutters must all stay transparent.
+        alpha = bytearray(pixels(layer, 0, 0, sw, sh)[3::4])
+        for i in range(len(paths)):
+            x, y = cell(i)
+            for r in range(ch):
+                alpha[(y + r) * sw + x:(y + r) * sw + x + cw] = bytes(cw)
+        if any(alpha):
+            raise RuntimeError("export verification failed: unused cell, margin or spacing is not transparent")
         export_with(sheet, outputs[2], {})
         feet = [b["y"] + b["h"] for b in bounds if b]
         centres = [b["x"] + b["w"] / 2 for b in bounds if b]
-        report = {"frames": frames, "meta": {"image": os.path.basename(dst), "size": {"w": cw * cols, "h": ch * rows},
-            "scale": "1", "columns": cols, "rows": rows, "frameWidth": cw, "frameHeight": ch,
+        report = {"frames": frames, "meta": {"image": os.path.basename(dst), "size": {"w": sw, "h": sh},
+            "scale": "1", "columns": cols, "rows": rows, "frameWidth": cw, "frameHeight": ch, "margin": margin, "spacing": spacing,
             "verification": "exact RGBA match", "sourceBytes": sum(os.path.getsize(p) for p in paths), "sheetBytes": os.path.getsize(dst),
             "footDriftPx": max(feet)-min(feet) if feet else None, "centreDriftPx": max(centres)-min(centres) if centres else None}}
         with open(outputs[1], "w", encoding="utf-8") as fh:

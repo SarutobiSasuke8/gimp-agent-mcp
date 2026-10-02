@@ -88,7 +88,7 @@ Use `gimp_context(image_id)` to read selected layers and selection bounds. With 
 | Everyday editing | Three compact tools cover common adjustments, canvas transforms, fills and simple drawing. Every action reports the installed GEGL or PDB operation it used. |
 | One undo step | `gimp_edit_batch` groups supported edits on one image into one Ctrl+Z step. A failed step stops the batch, reports partial results and closes the group. |
 | Runtime discovery | Search and describe the installed PDB procedures and GEGL operations, including parameter names, types and enum values. Numeric-array arguments support curves and brush strokes. |
-| Repeatable jobs | Nine recipes and folder batching, plus three bundled workflow skills. |
+| Repeatable jobs | Ten recipes and folder batching, plus three bundled workflow skills. |
 | Honest failure handling | A lost connection never silently replays an edit whose outcome is unknown. Reconnect, inspect, then decide whether to retry. |
 
 Other GIMP MCP projects also provide TCP bridges and visual feedback. This project's emphasis is editable output, measurement, grouped edits and reproducible validation. Generic API access is broad, but does not guarantee that every GIMP procedure or GEGL operation works with every argument combination.
@@ -124,7 +124,8 @@ gimp_render(image_id=3, overlay=["grid", "layers", "selection"], grid_size=100,
 |---|---|
 | `telegram_sticker` | Fit, outline and shadow on a transparent 512 × 512 canvas. |
 | `compose` | Cards and banners from a manifest of images, text, shapes and effects. |
-| `sprite_sheet_pack` | Ordered, equal-sized PNGs → verified grid PNG, layered XCF and atlas JSON. |
+| `sprite_sheet_pack` | Ordered, equal-sized PNGs → verified grid PNG, layered XCF and atlas JSON, with optional margin and spacing. |
+| `sprite_atlas_pack` | Mixed-size PNGs → padded, optionally trimmed atlas PNG, layered XCF and atlas JSON, verified pixel for pixel. |
 | `sprite_sheet_slice` | Fixed-size tiles from a sheet, optionally skipping empty cells. |
 | `web_optimise` | Resize and adjust export quality toward a file-size budget. |
 | `icon_set` | Export a square source at multiple sizes. |
