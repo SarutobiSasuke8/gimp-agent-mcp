@@ -90,3 +90,22 @@ def test_macos_config_root_uses_application_support(tmp_path, monkeypatch):
     monkeypatch.setattr(paths.platform, "system", lambda: "Darwin")
     monkeypatch.setattr(paths.Path, "home", lambda: tmp_path)
     assert paths.candidate_config_roots() == [tmp_path / "Library" / "Application Support" / "GIMP"]
+
+
+def test_installed_plugin_version_and_freshness(tmp_path):
+    assert paths.installed_plugin_version(tmp_path) is None
+    (tmp_path / "agent_bridge_core.py").write_text('"""core"""\nBRIDGE_VERSION = "0.2.3"\n', encoding="utf-8")
+    assert paths.installed_plugin_version(tmp_path) == "0.2.3"
+    stale = paths.bridge_freshness(None, tmp_path)
+    assert stale["bridge_outdated"] and "install-plugin" in stale["update_hint"]
+    (tmp_path / "agent_bridge_core.py").write_text(f'BRIDGE_VERSION = "{core.BRIDGE_VERSION}"\n', encoding="utf-8")
+    assert "bridge_outdated" not in paths.bridge_freshness(core.BRIDGE_VERSION, tmp_path)
+    # A current install does not hide an older bridge that is still running.
+    assert paths.bridge_freshness("0.2.3", tmp_path)["bridge_outdated"]
+
+
+def test_shipped_plugin_version_is_readable():
+    from pathlib import Path as _Path
+
+    shipped = _Path(core.__file__).parent
+    assert paths.installed_plugin_version(shipped) == core.BRIDGE_VERSION

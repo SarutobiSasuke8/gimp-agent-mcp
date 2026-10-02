@@ -50,6 +50,48 @@ for frame in range(6):
 result = {"paths": paths}
 '''
 
+# Mixed canvases with transparent borders: the case a grid cannot pack.
+ATLAS_FIXTURE = r'''
+import os
+specs = [("ship", 96, 48, (8, 6, 80, 36), "#38bdf8"), ("rock-big", 64, 64, (4, 4, 56, 56), "#a8a29e"),
+         ("rock-small", 24, 24, (2, 2, 20, 20), "#78716c"), ("laser", 8, 32, (2, 0, 4, 32), "#f43f5e"),
+         ("coin", 16, 16, (0, 0, 16, 16), "#facc15"), ("blank", 12, 12, None, "#000000"),
+         ("banner", 120, 20, (0, 4, 120, 12), "#a3e635")]
+paths = []
+for name, w, h, box, color in specs:
+    image = Gimp.Image.new(w, h, Gimp.ImageBaseType.RGB)
+    layer = Gimp.Layer.new(image, name, w, h, Gimp.ImageType.RGBA_IMAGE, 100.0, Gimp.LayerMode.NORMAL)
+    image.insert_layer(layer, None, 0)
+    layer.fill(Gimp.FillType.TRANSPARENT)
+    Gimp.context_push()
+    Gimp.context_set_antialias(False)
+    try:
+        if box:
+            image.select_rectangle(Gimp.ChannelOps.REPLACE, *box)
+            Gimp.context_set_foreground(make_color(color))
+            layer.edit_fill(Gimp.FillType.FOREGROUND)
+            image.select_rectangle(Gimp.ChannelOps.REPLACE, box[0], box[1], 1, 1)
+            Gimp.context_set_foreground(make_color("rgba(255,255,255,0.5)"))
+            layer.edit_fill(Gimp.FillType.FOREGROUND)
+        Gimp.Selection.none(image)
+        path = os.path.join(out_dir, name + ".png")
+        export_with(image, path, {"compression": 9, "bkgd": False, "phys": False, "time": False, "include-thumbnail": False})
+        paths.append(path)
+    finally:
+        Gimp.context_pop()
+        image.delete()
+result = {"paths": paths}
+'''
+
+
+def _separated(frames, padding):
+    rects = [(f["frame"]["x"], f["frame"]["y"], f["frame"]["w"], f["frame"]["h"]) for f in frames.values()]
+    for i, (x, y, w, h) in enumerate(rects):
+        for x2, y2, w2, h2 in rects[i + 1:]:
+            if not (x + w + padding <= x2 or x2 + w2 + padding <= x or y + h + padding <= y2 or y2 + h2 + padding <= y):
+                return False
+    return True
+
 
 async def run(output: Path):
     output.mkdir(parents=True, exist_ok=True)
@@ -118,7 +160,46 @@ result = {"hashes": hashes, "equal": hashes[0] == hashes[1]}
             margin = (await call("gimp_run_recipe", {"name": "sprite_sheet_slice", "params": {
                 "input_path": result["output_path"], "output_dir": str(output / "margin"), "tile_width": 64, "tile_height": 64, "margin": 1, "skip_empty": False}}))["result"]
             assert (margin["cols"], margin["rows"], margin["tiles"]) == (3, 1, 3), margin
-            report = {"transport": "MCP stdio", "pack": result, "roundtrip": compare["result"], "expected_errors": failures, "margin_grid": [3, 1]}
+            # Margin and spacing on the packer round-trip through the slicer's matching parameters.
+            spaced = (await call("gimp_run_recipe", {"name": "sprite_sheet_pack", "params": {
+                **params, "output_path": str(output / "bot-spaced.png"), "margin": 1, "spacing": 2, "keep_open": False}}))["result"]
+            assert spaced["size"] == {"w": 2 + 4 * 64 + 3 * 2, "h": 2 + 2 * 64 + 2}, spaced
+            assert spaced["bounds"] == result["bounds"], spaced
+            unspaced = (await call("gimp_run_recipe", {"name": "sprite_sheet_slice", "params": {
+                "input_path": spaced["output_path"], "output_dir": str(output / "spaced"), "tile_width": 64, "tile_height": 64,
+                "margin": 1, "spacing": 2}}))["result"]
+            assert unspaced["tiles"] == 6, unspaced
+            respaced = (await call("gimp_run_recipe", {"name": "sprite_sheet_pack", "params": {
+                "input_paths": unspaced["files"], "output_path": str(output / "spaced-roundtrip.png"), "columns": 4}}))["result"]
+            assert respaced["bounds"] == result["bounds"], respaced
+
+            # Mixed-size atlas: trimmed, padded, verified, and loadable as standard atlas JSON.
+            atlas_dir = output / "atlas-src"
+            atlas_dir.mkdir(exist_ok=True)
+            sprites = (await call("gimp_run_python", {"code": "out_dir = " + repr(str(atlas_dir)) + "\n" + ATLAS_FIXTURE}))["result"]["paths"]
+            atlas = (await call("gimp_run_recipe", {"name": "sprite_atlas_pack", "params": {
+                "input_paths": sprites, "output_path": str(output / "atlas.png"), "padding": 2, "trim": True, "max_width": 256}}))["result"]
+            assert atlas["verification"] == "exact RGBA match, transparent padding" and atlas["frames"] == 7, atlas
+            data = json.loads(Path(atlas["atlas_path"]).read_text(encoding="utf-8"))
+            frames = data["frames"]
+            assert frames["ship.png"]["spriteSourceSize"] == {"x": 8, "y": 6, "w": 80, "h": 36}, frames["ship.png"]
+            assert frames["ship.png"]["trimmed"] and not frames["coin.png"]["trimmed"], frames
+            assert frames["blank.png"]["frame"]["w"] == 1 and frames["blank.png"]["alphaBounds"] is None, frames["blank.png"]
+            assert frames["banner.png"]["sourceSize"] == {"w": 120, "h": 20}, frames["banner.png"]
+            assert _separated(frames, 2) and data["meta"]["size"]["w"] <= 256, data["meta"]
+            untrimmed = (await call("gimp_run_recipe", {"name": "sprite_atlas_pack", "params": {
+                "input_paths": sprites, "output_path": str(output / "atlas-pot.png"), "padding": 1, "max_width": 256, "power_of_two": True}}))["result"]
+            w, h = untrimmed["size"]["w"], untrimmed["size"]["h"]
+            assert w & (w - 1) == 0 and h & (h - 1) == 0, untrimmed
+            assert all(not f["trimmed"] for f in json.loads(Path(untrimmed["atlas_path"]).read_text(encoding="utf-8"))["frames"].values())
+            atlas_base = {"input_paths": sprites, "output_path": str(output / "atlas-err.png")}
+            for label, patch in [("too wide for max_width", {"max_width": 64}), ("non power-of-two max_width", {"max_width": 300, "power_of_two": True}),
+                                 ("atlas overwrite refused", {"output_path": atlas["output_path"]})]:
+                failures[label] = await call("gimp_run_recipe", {"name": "sprite_atlas_pack", "params": {**atlas_base, **patch}}, error=True)
+            report = {"transport": "MCP stdio", "pack": result, "roundtrip": compare["result"], "expected_errors": failures, "margin_grid": [3, 1],
+                      "spaced_pack": {k: spaced[k] for k in ("size", "margin", "spacing", "sheetBytes")},
+                      "atlas": {k: atlas[k] for k in ("size", "occupancy", "sourceBytes", "atlasBytes", "placements")},
+                      "atlas_power_of_two": {k: untrimmed[k] for k in ("size", "occupancy", "atlasBytes")}}
             (output / "proof.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
             print(json.dumps(report, indent=2), flush=True)
 

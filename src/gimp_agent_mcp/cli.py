@@ -116,6 +116,8 @@ def cmd_doctor(args: argparse.Namespace) -> int:
         report["gimp_version"] = ping.get("gimp_version")
         report["mode"] = ping.get("mode")
         report["open_images"] = len(ping.get("images", []))
+        report["bridge_version"] = ping.get("bridge_version")
+    report.update(paths.bridge_freshness(ping.get("bridge_version") if ping else None, install))
     print(json.dumps(report, indent=2))
     ok = report["gimp_gui"] or report["gimp_console"]
     return 0 if ok else 1

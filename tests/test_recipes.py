@@ -64,3 +64,53 @@ def test_nullable_manifest_and_nonfinite_numbers():
                 recipes.resolve_params("test", {"n": value})
     finally:
         recipes._REGISTRY = old
+
+
+def _assert_valid_packing(sizes, positions, width, height, max_width, padding):
+    rects = [(x, y, w, h) for (x, y), (w, h) in zip(positions, sizes, strict=True)]
+    assert width <= max_width
+    for i, (x, y, w, h) in enumerate(rects):
+        assert x >= padding and y >= padding and x + w + padding <= width and y + h + padding <= height
+        for x2, y2, w2, h2 in rects[i + 1:]:
+            # Separated by at least `padding` on one axis.
+            assert x + w + padding <= x2 or x2 + w2 + padding <= x or y + h + padding <= y2 or y2 + h2 + padding <= y
+
+
+@pytest.mark.parametrize("padding", [0, 1, 2, 4])
+def test_atlas_packer_has_no_overlaps_and_honours_padding(padding):
+    pack = recipes.get_recipe("sprite_atlas_pack").pack_rects
+    sizes = [(64, 64), (32, 96), (96, 20), (8, 8), (48, 48), (120, 30), (17, 33), (64, 64), (1, 1), (40, 70)] * 3
+    positions, width, height = pack(sizes, 256, padding)
+    _assert_valid_packing(sizes, positions, width, height, 256, padding)
+    assert pack(sizes, 256, padding) == (positions, width, height)
+
+
+def test_atlas_packer_is_dense_for_equal_sprites():
+    pack = recipes.get_recipe("sprite_atlas_pack").pack_rects
+    positions, width, height = pack([(32, 32)] * 16, 128, 0)
+    assert (width, height) == (128, 128) and len(set(positions)) == 16
+
+
+def test_atlas_packer_rejects_sprites_wider_than_the_atlas():
+    pack = recipes.get_recipe("sprite_atlas_pack").pack_rects
+    with pytest.raises(ValueError, match="max_width"):
+        pack([(250, 10)], 256, 4)
+    with pytest.raises(ValueError, match="positive"):
+        pack([(0, 10)], 256, 0)
+
+
+def test_next_power_of_two():
+    npot = recipes.get_recipe("sprite_atlas_pack").next_power_of_two
+    assert [npot(n) for n in (1, 2, 3, 255, 256, 257)] == [1, 2, 4, 256, 256, 512]
+
+
+@pytest.mark.parametrize("key,value", [("padding", -1), ("max_width", 0), ("trim", "yes"), ("power_of_two", 1)])
+def test_atlas_rejects_bad_params(key, value):
+    with pytest.raises(ValueError, match=key):
+        recipes.resolve_params("sprite_atlas_pack", {"input_paths": ["a.png"], "output_path": "out.png", key: value})
+
+
+@pytest.mark.parametrize("key", ["margin", "spacing"])
+def test_pack_rejects_negative_margin_and_spacing(key):
+    with pytest.raises(ValueError, match=key):
+        recipes.resolve_params("sprite_sheet_pack", {"input_paths": ["a.png"], "output_path": "out.png", key: -1})

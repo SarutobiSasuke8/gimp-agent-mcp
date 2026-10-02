@@ -46,6 +46,8 @@ Exit evidence: `scripts/everyday_proof.py` resolves all 23 actions before execut
 
 - [Brand kits](https://github.com/SarutobiSasuke8/gimp-agent-mcp/issues/4): named colours, fonts, assets and canvases for compose, with validation before rendering.
 - [Broader asset workflows](https://github.com/SarutobiSasuke8/gimp-agent-mcp/issues/9): sprite padding, mixed-size packing and direct open-layer inputs. Preserve pixel verification and layered XCF output.
+  - [x] Grid `margin`/`spacing` and padded, optionally trimmed mixed-size atlases (`sprite_atlas_pack`), verified against real GIMP.
+  - [ ] Direct open-layer inputs.
 - In the same issue, add social crop/export profiles with focus-aware crops rather than a list of fixed dimensions alone.
 - Investigate and validate a warp/liquify workflow separately before claiming parity.
 
@@ -55,7 +57,8 @@ Exit evidence: token and inline manifests render identically, atlas coordinates 
 
 - [Cancellation and progress](https://github.com/SarutobiSasuke8/gimp-agent-mcp/issues/5): staged job progress first, then cancellation only for operations GIMP can safely interrupt.
 - [macOS installation and live GIMP validation](https://github.com/SarutobiSasuke8/gimp-agent-mcp/issues/10): Apple Silicon and Intel both pass GIMP 3.2.4 smoke and the targeted capability proof on macOS 15. A manual visible-window check remains useful for native focus and keyboard behaviour.
-- Fresh-install reports from users, plus upgrade checks for the plug-in/server version mismatch path.
+- Fresh-install reports from users.
+- [x] Plug-in/server version mismatch is reported by `doctor`, `gimp_status` and `gimp_launch`, with an update hint.
 
 Exit evidence: long jobs expose honest state, cancellation leaves a consistent document, and the supported-platform table is backed by repeatable runs.
 
