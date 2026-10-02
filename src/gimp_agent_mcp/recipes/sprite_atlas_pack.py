@@ -1,9 +1,10 @@
 """Pack mixed-size PNG sprites into a padded texture atlas and verify the exported pixels."""
 
-DESCRIPTION = "Pack mixed-size PNG sprites into a padded atlas, optionally trimming transparent borders; save layered XCF and atlas JSON, and verify exported RGBA pixels"
+DESCRIPTION = "Pack mixed-size PNG sprites or open layers into a padded atlas, optionally trimming transparent borders; save layered XCF and atlas JSON, and verify exported RGBA pixels"
 
 PARAMS = {
-    "input_paths": {"type": "array", "required": True, "description": "Non-empty list of PNG sprites; canvas sizes may differ"},
+    "input_paths": {"type": "array", "default": None, "description": "PNG sprites; canvas sizes may differ. Give this or input_layer_ids"},
+    "input_layer_ids": {"type": "array", "default": None, "description": "Open, non-group layers to pack as sprites, keyed by layer name; source documents are not changed"},
     "output_path": {"type": "string", "required": True, "description": "Destination PNG; JSON and XCF use the same stem"},
     "padding": {"type": "integer", "default": 2, "minimum": 0, "description": "Transparent pixels between sprites and around the atlas edge"},
     "trim": {"type": "boolean", "default": False, "description": "Pack each sprite's measured alpha bounds instead of its full canvas"},
@@ -78,15 +79,29 @@ SOURCE = PACKER + r'''
 import os, json, hashlib
 
 def pack_atlas():
-    paths = params["input_paths"]
-    if not isinstance(paths, list) or not paths or any(not isinstance(p, str) or not p for p in paths):
-        raise ValueError("input_paths must be a non-empty list of PNG paths")
-    paths = [os.path.abspath(os.path.expanduser(p)) for p in paths]
-    if any(os.path.splitext(p)[1].lower() != ".png" or not os.path.isfile(p) for p in paths):
-        raise ValueError("every input must be an existing PNG file")
-    names = [os.path.basename(p) for p in paths]
+    paths, layer_ids = params["input_paths"], params["input_layer_ids"]
+    if (paths is None) == (layer_ids is None):
+        raise ValueError("give exactly one of input_paths or input_layer_ids")
+    if paths is not None:
+        if not isinstance(paths, list) or not paths or any(not isinstance(p, str) or not p for p in paths):
+            raise ValueError("input_paths must be a non-empty list of PNG paths")
+        paths = [os.path.abspath(os.path.expanduser(p)) for p in paths]
+        if any(os.path.splitext(p)[1].lower() != ".png" or not os.path.isfile(p) for p in paths):
+            raise ValueError("every input must be an existing PNG file")
+        names = [os.path.basename(p) for p in paths]
+    else:
+        if not isinstance(layer_ids, list) or not layer_ids or any(type(i) is not int for i in layer_ids):
+            raise ValueError("input_layer_ids must be a non-empty list of layer ids")
+        open_layers = []
+        for i in layer_ids:
+            item = item_by_id(i)
+            if not isinstance(item, Gimp.Layer) or item.is_group():
+                raise ValueError(f"item {i} is not a raster layer")
+            open_layers.append(item)
+        names = [layer.get_name() for layer in open_layers]
+        paths = []
     if len({n.casefold() for n in names}) != len(names):
-        raise ValueError("input sprite basenames must be unique for atlas keys")
+        raise ValueError("sprite names (file basenames or layer names) must be unique for atlas keys")
     dst = os.path.abspath(os.path.expanduser(params["output_path"]))
     if os.path.splitext(dst)[1].lower() != ".png":
         raise ValueError("output_path must end in .png")
@@ -120,13 +135,18 @@ def pack_atlas():
     atlas = verified = None
     success = False
     try:
-        for i, path in enumerate(paths):
+        inputs = []
+        for path in paths:
             source = Gimp.file_load(Gimp.RunMode.NONINTERACTIVE, Gio.File.new_for_path(path))
             if source is None:
                 raise RuntimeError(f"could not load {path}")
             sources.append(source)
-            w, h = source.get_width(), source.get_height()
-            layer = source.get_layers()[0]
+            inputs.append(source.get_layers()[0])
+        if not paths:
+            # Open layers are read in place; their documents are never modified or closed.
+            inputs = open_layers
+        for i, layer in enumerate(inputs):
+            w, h = layer.get_width(), layer.get_height()
             full = pixels(layer, 0, 0, w, h)
             b = bbox(full, w, h)
             # A fully transparent sprite trims to one transparent pixel, as standard packers do.
@@ -183,7 +203,7 @@ def pack_atlas():
         report = {"frames": frames, "meta": {"image": os.path.basename(dst), "size": {"w": aw, "h": ah}, "scale": "1",
             "padding": pad, "trimmed": trim, "powerOfTwo": params["power_of_two"],
             "verification": "exact RGBA match, transparent padding", "occupancy": round(used / (aw * ah), 4),
-            "sourceBytes": sum(os.path.getsize(p) for p in paths), "atlasBytes": os.path.getsize(dst)}}
+            "sourceBytes": sum(os.path.getsize(p) for p in paths) if paths else None, "atlasBytes": os.path.getsize(dst)}}
         with open(outputs[1], "w", encoding="utf-8") as fh:
             json.dump(report, fh, indent=2)
             fh.write("\n")

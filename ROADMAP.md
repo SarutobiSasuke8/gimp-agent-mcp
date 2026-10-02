@@ -47,7 +47,7 @@ Exit evidence: `scripts/everyday_proof.py` resolves all 23 actions before execut
 - [Brand kits](https://github.com/SarutobiSasuke8/gimp-agent-mcp/issues/4): named colours, fonts, assets and canvases for compose, with validation before rendering.
 - [Broader asset workflows](https://github.com/SarutobiSasuke8/gimp-agent-mcp/issues/9): sprite padding, mixed-size packing and direct open-layer inputs. Preserve pixel verification and layered XCF output.
   - [x] Grid `margin`/`spacing` and padded, optionally trimmed mixed-size atlases (`sprite_atlas_pack`), verified against real GIMP.
-  - [ ] Direct open-layer inputs.
+  - [x] Direct open-layer inputs for `sprite_atlas_pack` (`input_layer_ids`).
 - In the same issue, add social crop/export profiles with focus-aware crops rather than a list of fixed dimensions alone.
 - Investigate and validate a warp/liquify workflow separately before claiming parity.
 

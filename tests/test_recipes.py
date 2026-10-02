@@ -114,3 +114,10 @@ def test_atlas_rejects_bad_params(key, value):
 def test_pack_rejects_negative_margin_and_spacing(key):
     with pytest.raises(ValueError, match=key):
         recipes.resolve_params("sprite_sheet_pack", {"input_paths": ["a.png"], "output_path": "out.png", key: -1})
+
+
+def test_atlas_accepts_open_layer_ids_instead_of_paths():
+    resolved = recipes.resolve_params("sprite_atlas_pack", {"input_layer_ids": [3, 4], "output_path": "out.png"})
+    assert resolved["input_layer_ids"] == [3, 4] and resolved["input_paths"] is None
+    with pytest.raises(ValueError, match="input_layer_ids"):
+        recipes.resolve_params("sprite_atlas_pack", {"input_layer_ids": "3", "output_path": "out.png"})

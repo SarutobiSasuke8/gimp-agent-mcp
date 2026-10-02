@@ -192,6 +192,34 @@ result = {"hashes": hashes, "equal": hashes[0] == hashes[1]}
             w, h = untrimmed["size"]["w"], untrimmed["size"]["h"]
             assert w & (w - 1) == 0 and h & (h - 1) == 0, untrimmed
             assert all(not f["trimmed"] for f in json.loads(Path(untrimmed["atlas_path"]).read_text(encoding="utf-8"))["frames"].values())
+            # Open layers pack in place: same verification, source document untouched.
+            doc = (await call("gimp_run_python", {"code": "paths = " + repr(sprites[:3]) + r'''
+import os
+img = Gimp.Image.new(200, 120, Gimp.ImageBaseType.RGB)
+ids = []
+for path in paths:
+    layer = Gimp.file_load_layer(Gimp.RunMode.NONINTERACTIVE, img, Gio.File.new_for_path(path))
+    img.insert_layer(layer, None, 0)
+    layer.set_name(os.path.splitext(os.path.basename(path))[0])
+    ids.append(layer.get_id())
+group = Gimp.GroupLayer.new(img, "Group")
+img.insert_layer(group, None, 0)
+result = {"image_id": img.get_id(), "layer_ids": ids, "group_id": group.get_id()}
+'''}))["result"]
+            before = await call("gimp_image_info", {"image_id": doc["image_id"]})
+            from_layers = (await call("gimp_run_recipe", {"name": "sprite_atlas_pack", "params": {
+                "input_layer_ids": doc["layer_ids"], "output_path": str(output / "atlas-layers.png"), "padding": 2, "trim": True}}))["result"]
+            layer_frames = json.loads(Path(from_layers["atlas_path"]).read_text(encoding="utf-8"))["frames"]
+            assert sorted(layer_frames) == ["rock-big", "rock-small", "ship"], layer_frames
+            assert layer_frames["ship"]["spriteSourceSize"] == frames["ship.png"]["spriteSourceSize"], layer_frames
+            assert from_layers["sourceBytes"] is None and from_layers["verification"].startswith("exact RGBA"), from_layers
+            after = await call("gimp_image_info", {"image_id": doc["image_id"]})
+            assert before == after, (before, after)
+            failures["both input kinds"] = await call("gimp_run_recipe", {"name": "sprite_atlas_pack", "params": {
+                "input_paths": sprites, "input_layer_ids": doc["layer_ids"], "output_path": str(output / "atlas-both.png")}}, error=True)
+            failures["group layer refused"] = await call("gimp_run_recipe", {"name": "sprite_atlas_pack", "params": {
+                "input_layer_ids": [doc["group_id"]], "output_path": str(output / "atlas-group.png")}}, error=True)
+            await call("gimp_close_image", {"image_id": doc["image_id"]})
             atlas_base = {"input_paths": sprites, "output_path": str(output / "atlas-err.png")}
             for label, patch in [("too wide for max_width", {"max_width": 64}), ("non power-of-two max_width", {"max_width": 300, "power_of_two": True}),
                                  ("atlas overwrite refused", {"output_path": atlas["output_path"]})]:
@@ -199,7 +227,8 @@ result = {"hashes": hashes, "equal": hashes[0] == hashes[1]}
             report = {"transport": "MCP stdio", "pack": result, "roundtrip": compare["result"], "expected_errors": failures, "margin_grid": [3, 1],
                       "spaced_pack": {k: spaced[k] for k in ("size", "margin", "spacing", "sheetBytes")},
                       "atlas": {k: atlas[k] for k in ("size", "occupancy", "sourceBytes", "atlasBytes", "placements")},
-                      "atlas_power_of_two": {k: untrimmed[k] for k in ("size", "occupancy", "atlasBytes")}}
+                      "atlas_power_of_two": {k: untrimmed[k] for k in ("size", "occupancy", "atlasBytes")},
+                      "atlas_from_open_layers": {k: from_layers[k] for k in ("size", "occupancy", "placements")}}
             (output / "proof.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
             print(json.dumps(report, indent=2), flush=True)
 

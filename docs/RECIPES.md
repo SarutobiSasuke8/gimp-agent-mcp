@@ -63,6 +63,8 @@ Use this for a loose collection of sprites with different canvas sizes (props, p
 
 Placement uses MaxRects with the bottom-left rule, largest sprites first, and is deterministic for the same inputs. Sprites are never rotated. The result reports placements, `occupancy` (sprite area over atlas area), and source versus atlas bytes; outputs are `sprites.png`, a layered `sprites.xcf` with one named layer per sprite, and `sprites.json`. Verification reopens the exported PNG, compares every placed rectangle with its decoded source RGBA, and requires all padding and unused area to be transparent. JSON is written only after verification passes.
 
+To pack layers that are already open, pass `input_layer_ids` instead of `input_paths`. Each layer is one sprite, its own size is the source canvas, and its layer name is the atlas key, so names must be unique. Group layers are refused. The source documents are read only; nothing in them changes.
+
 For Phaser, `this.load.atlas('sprites', 'out/sprites.png', 'out/sprites.json');` then `this.add.image(x, y, 'sprites', 'ship.png')`. Frame names are the source file names.
 
 Run `python scripts/sprite_sheet_proof.py OUTPUT_DIRECTORY` from the development environment for a real MCP stdio proof: procedural GIMP frames, packing, re-open verification, slicing round-trips with and without spacing, a trimmed and padded mixed-size atlas, a power-of-two atlas, and failure cases. No image-generation service or optional imaging library is required.
