@@ -11,7 +11,11 @@ import sys
 import time
 from pathlib import Path
 
-from gimp_agent_mcp.bridge_client import BridgeClient, BridgeError, launch_gimp
+from gimp_agent_mcp.bridge_client import BridgeClient, BridgeError, BridgeUnavailable, launch_gimp
+
+
+class GimpStopped(Exception):
+    """GIMP stopped answering mid-proof; later checks would only report the same outage."""
 
 
 def run(output: Path):
@@ -35,6 +39,8 @@ def run(output: Path):
         except Exception as exc:
             report["checks"].append({"name": name, "passed": False, "error": str(exc)})
             print("FAIL", name, str(exc), flush=True)
+            if isinstance(exc, BridgeUnavailable):
+                raise GimpStopped(name) from exc
 
     def image(w=64, h=48, fill="#808080"):
         res = call("new_image", width=w, height=h, fill=fill)
@@ -207,6 +213,10 @@ finally:
             snapshots.remove(sid)
             return "snapshot released and excluded from status documents"
         check("snapshot cleanup", snapshot_cleanup)
+    except GimpStopped as stopped:
+        # Report the crash once instead of a cascade of "no bridge token" failures.
+        report["aborted"] = f"GIMP stopped responding during {stopped}; remaining checks were not run. See gimp-agent-launch.log."
+        print("ABORT", report["aborted"], flush=True)
     finally:
         for sid in snapshots:
             try:
@@ -218,10 +228,10 @@ finally:
                 call("close_image", image_id=iid)
             except BridgeError:
                 pass
-        if owned:
+        if owned and "aborted" not in report:
             call("shutdown", quit_gimp=True)
         c.close()
-        report["passed"] = all(item["passed"] for item in report["checks"])
+        report["passed"] = "aborted" not in report and all(item["passed"] for item in report["checks"])
         (output / "report.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
     return 0 if report["passed"] else 1
 

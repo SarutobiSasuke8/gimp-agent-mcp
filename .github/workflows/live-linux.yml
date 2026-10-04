@@ -27,8 +27,8 @@ jobs:
           apt-get install -y --no-install-recommends ca-certificates git gimp python3-gi python3-gi-cairo gir1.2-gimp-3.0 xvfb xauth dbus-x11 fonts-dejavu-core
           gimp --version
           gimp --version | grep -E 'version 3\.'
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v7
       - run: uv sync --extra dev --python 3.12
       - name: Install bridge into isolated profile
         run: |
@@ -39,7 +39,7 @@ jobs:
           dbus-run-session -- xvfb-run -a uv run gimp-agent-mcp smoke
           dbus-run-session -- xvfb-run -a uv run python scripts/capability_proof.py /tmp/gimp-proof
           dbus-run-session -- xvfb-run -a uv run python scripts/everyday_proof.py /tmp/gimp-proof
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         if: always()
         with:
           name: linux-gimp-proof

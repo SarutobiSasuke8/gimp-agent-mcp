@@ -91,19 +91,28 @@ def gimp_status() -> dict[str, Any]:
             "gimp_found": str(exes.any) if exes.any else None,
             "plugin_installed": bool(paths.plugin_install_dir() and (paths.plugin_install_dir() / "gimp-agent-bridge.py").is_file()),
             "hint": "Call gimp_launch(mode='gui'|'headless'), or start Filters > Development > Start Agent Bridge inside GIMP.",
+            **paths.bridge_freshness(),
         }
     info["connected"] = True
     info["python_tool_enabled"] = ALLOW_PYTHON
-    return info
+    return {**info, **_freshness(info)}
+
+
+def _freshness(info: dict[str, Any]) -> dict[str, Any]:
+    from . import paths
+
+    return paths.bridge_freshness(info.get("bridge_version"))
 
 
 @mcp.tool()
 def gimp_launch(mode: str = "gui", wait_seconds: int = 90) -> dict[str, Any]:
     """Start GIMP 3 with the bridge running. mode='gui' opens the normal window; 'headless' runs gimp-console with no UI."""
-    if _client.ping():
-        return {"already_running": True, **(_client.ping() or {})}
+    running = _client.ping()
+    if running:
+        return {"already_running": True, **running, **_freshness(running)}
     try:
-        return launch_gimp(mode=mode, wait_seconds=float(wait_seconds), client=_client)
+        launched = launch_gimp(mode=mode, wait_seconds=float(wait_seconds), client=_client)
+        return {**launched, **_freshness(launched.get("ping") or {})}
     except (BridgeUnavailable, FileNotFoundError, ValueError) as exc:
         raise ToolError(str(exc)) from exc
 

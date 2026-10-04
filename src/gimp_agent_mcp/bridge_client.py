@@ -145,7 +145,11 @@ class BridgeClient:
 
         if not response.get("ok"):
             err = response.get("error") or {}
-            raise BridgeError(err.get("message", "unknown bridge error"), err.get("type", "BridgeError"), err.get("traceback"))
+            message = err.get("message", "unknown bridge error")
+            if err.get("type") == "UnknownOp":
+                # The usual cause is a plug-in left over from an older release.
+                message = f"{message}. {paths.PLUGIN_UPDATE_HINT}"
+            raise BridgeError(message, err.get("type", "BridgeError"), err.get("traceback"))
         return response.get("result")
 
     def ping(self) -> dict[str, Any] | None:

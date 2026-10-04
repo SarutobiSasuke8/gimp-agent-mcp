@@ -29,8 +29,8 @@ jobs:
       GIMP_AGENT_BRIDGE_FILE: /tmp/gimp-agent-profile/agent-bridge.json
       GIMP_AGENT_PORT: "23877"
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v7
       - name: Install official GIMP app through Homebrew
         run: |
           brew install --cask gimp
@@ -40,6 +40,8 @@ jobs:
         run: |
           uv sync --extra dev --python 3.12
           mkdir -p "$GIMP_AGENT_CONFIG_DIR"
+          # No network update check during proofs; it is not under test and adds timing variance.
+          echo '(check-updates no)' >> "$GIMP3_DIRECTORY/gimprc"
           uv run gimp-agent-mcp install-plugin
           uv run gimp-agent-mcp doctor
       - name: Headless smoke test
@@ -48,12 +50,19 @@ jobs:
         run: |
           uv run python scripts/capability_proof.py proof-output
           uv run python scripts/everyday_proof.py proof-output
+      - name: Collect GIMP crash reports
+        if: failure()
+        run: |
+          mkdir -p crash-reports
+          find ~/Library/Logs/DiagnosticReports /Library/Logs/DiagnosticReports -iname '*gimp*' -exec cp {} crash-reports/ \; 2>/dev/null || true
+          ls -la crash-reports
       - name: Upload capability evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: macos-gimp-proof-${{ matrix.arch }}
           path: |
             proof-output/*.json
             /tmp/gimp-agent-profile/gimp-agent-launch.log
+            crash-reports/
           if-no-files-found: ignore

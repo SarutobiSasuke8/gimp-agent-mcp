@@ -49,6 +49,24 @@ The result reports source/sheet bytes, bounds, and foot/centre drift. Drift is a
 
 For Phaser, load the grid with `this.load.spritesheet('idle', 'out/idle.png', { frameWidth: 64, frameHeight: 64, endFrame: 1 });` (replace dimensions/count with the result). Or load named full-cell frames with `this.load.atlas('idle', 'out/idle.png', 'out/idle.json');`.
 
-Run `python scripts/sprite_sheet_proof.py OUTPUT_DIRECTORY` from the development environment for a real MCP stdio proof: procedural GIMP frames, packing, re-open verification, slicing round-trip, and failure cases. No image-generation service or optional imaging library is required.
+`margin` (outer border) and `spacing` (gap between cells) default to 0 and use the same meaning as `sprite_sheet_slice`, so `sprite_sheet_slice` with the same values returns the original frames. Margins and gutters are checked transparent in the exported PNG.
+
+## Verified mixed-size atlas packing
+
+Call `gimp_run_recipe("sprite_atlas_pack", {"input_paths": ["sprites/ship.png", "sprites/rock.png", "sprites/coin.png"], "output_path": "out/sprites.png", "padding": 2, "trim": true})`.
+
+Use this for a loose collection of sprites with different canvas sizes (props, pickups, projectiles, UI pieces), where a uniform grid would waste space or cannot hold them. Animations of one subject usually belong in `sprite_sheet_pack`, which keeps every frame on the same cell.
+
+- `padding` (default 2) leaves that many transparent pixels between sprites and around the edge, which stops neighbours bleeding into each other under linear filtering or mipmaps.
+- `trim` packs each sprite's measured alpha bounds instead of its full canvas. `spriteSourceSize` records where the trimmed rectangle sat in the original canvas and `sourceSize` keeps the original size, so engines that honour trim data place it exactly where the untrimmed sprite would be. A fully transparent sprite trims to a single transparent pixel.
+- `max_width` (default 2048) caps the atlas width; height grows as needed. A sprite too wide for the cap is refused with its size. `power_of_two` rounds both dimensions up and requires a power-of-two `max_width`.
+
+Placement uses MaxRects with the bottom-left rule, largest sprites first, and is deterministic for the same inputs. Sprites are never rotated. The result reports placements, `occupancy` (sprite area over atlas area), and source versus atlas bytes; outputs are `sprites.png`, a layered `sprites.xcf` with one named layer per sprite, and `sprites.json`. Verification reopens the exported PNG, compares every placed rectangle with its decoded source RGBA, and requires all padding and unused area to be transparent. JSON is written only after verification passes.
+
+To pack layers that are already open, pass `input_layer_ids` instead of `input_paths`. Each layer is one sprite, its own size is the source canvas, and its layer name is the atlas key, so names must be unique. Group layers are refused. The source documents are read only; nothing in them changes.
+
+For Phaser, `this.load.atlas('sprites', 'out/sprites.png', 'out/sprites.json');` then `this.add.image(x, y, 'sprites', 'ship.png')`. Frame names are the source file names.
+
+Run `python scripts/sprite_sheet_proof.py OUTPUT_DIRECTORY` from the development environment for a real MCP stdio proof: procedural GIMP frames, packing, re-open verification, slicing round-trips with and without spacing, a trimmed and padded mixed-size atlas, a power-of-two atlas, and failure cases. No image-generation service or optional imaging library is required.
 
 Recipe parameter types are validated before execution. Integer parameters reject booleans and fractional/string values; declared minimums are enforced. Nullable defaults remain supported and mutable defaults are copied per invocation. Slice margins now apply on all four sides; partial edge cells are excluded.

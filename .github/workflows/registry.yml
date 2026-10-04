@@ -14,7 +14,7 @@ jobs:
       id-token: write # GitHub OIDC login to the registry; no stored secret
       contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Read manifest version
         run: |
           VERSION="$(jq -r .version server.json)"

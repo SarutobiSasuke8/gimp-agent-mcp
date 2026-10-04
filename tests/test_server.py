@@ -107,6 +107,7 @@ def test_recipe_catalogue():
         "contact_sheet",
         "sprite_sheet_slice",
         "sprite_sheet_pack",
+        "sprite_atlas_pack",
         "compose",
     }
 
