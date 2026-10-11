@@ -63,6 +63,38 @@ def run_smoke(mode: str = "headless", keep: bool = False, verbose: bool = True, 
 
     check("image_info", _info)
 
+    def _held_undo_group():
+        trial = client.call("new_image", {"width": 64, "height": 64, "fill": "transparent"})
+        trial_id = trial["image"]["id"]
+        snap = client.call("snapshot", {"image_id": trial_id})
+        try:
+            opened = client.call("undo_group", {"image_id": trial_id, "action": "start", "name": "agent: smoke pass"})
+            assert opened["open"] and {"image_id": trial_id, "name": "agent: smoke pass"} in client.call("ping")["open_agent_undo_groups"]
+            layer = client.call("layer", {"action": "new", "image_id": trial_id, "name": "first", "fill": "#ff0000"})
+            client.call("layer", {"action": "set", "layer_id": layer["id"], "opacity": 50.0})
+            client.call("layer", {"action": "duplicate", "layer_id": layer["id"]})
+            closed = client.call("undo_group", {"image_id": trial_id, "action": "end"})
+            assert not closed["open"] and not client.call("ping")["open_agent_undo_groups"]
+            assert len(client.call("image_info", {"image_id": trial_id})["layers"]) == 3
+
+            # A second client leaving mid-group must close its own group.
+            other = BridgeClient()
+            try:
+                other.call("undo_group", {"image_id": trial_id, "action": "start", "name": "agent: disconnect"})
+            finally:
+                other.close()
+            for _ in range(20):
+                if not client.call("ping")["open_agent_undo_groups"]:
+                    break
+                time.sleep(0.05)
+            assert not client.call("ping")["open_agent_undo_groups"]
+            return {"image_id": trial_id, "snapshot_id": snap["snapshot_id"], "edits": 3}
+        finally:
+            client.call("drop_snapshot", {"snapshot_id": snap["snapshot_id"]})
+            client.call("close_image", {"image_id": trial_id})
+
+    check("held undo group: three edits and disconnect cleanup", _held_undo_group)
+
     # 2. PDB search/describe/call with enum by nick
     def _pdb():
         s = client.call("pdb_search", {"query": "image scale", "limit": 5})

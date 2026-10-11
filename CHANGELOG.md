@@ -8,6 +8,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
+- `gimp_undo_group` can hold one image's edits across agent calls and closes held groups on client disconnect. `gimp_status` lists open groups. GIMP's public undo API cannot set a custom Undo History label, so the supplied name is bridge metadata only.
+
 - `sprite_atlas_pack`: mixed-size PNG sprites to a padded texture atlas (MaxRects, bottom-left rule) with optional trimming to measured alpha bounds, a width cap and power-of-two sizing. Writes a layered XCF and TexturePacker-style JSON (`frame`, `spriteSourceSize`, `sourceSize`, `trimmed`) that Phaser's `load.atlas` reads. The exported PNG is reopened and every placed rectangle must match its decoded source RGBA exactly, with all padding and unused area transparent.
 - `sprite_atlas_pack` also takes `input_layer_ids`: open, non-group layers packed in place and keyed by layer name, with the same verification. Source documents are read, never modified or closed.
 - `sprite_sheet_pack` takes `margin` and `spacing`, matching `sprite_sheet_slice`, so a spaced sheet slices back to the same frames. Margins and gutters are verified transparent alongside unused cells.

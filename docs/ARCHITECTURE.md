@@ -82,6 +82,8 @@ A recipe module declares `PARAMS` and `SOURCE`. The server resolves defaults, va
 
 ## 0.4 grouped editing and recovery
 
+The `undo_group` bridge operation holds a group across requests from the same socket. Its pure-Python registry tracks one held group per image and suppresses the per-operation start/end calls while held. A second client cannot edit that image through grouped operations until the owner ends or disconnects. Disconnect closes every group owned by that connection; `ping` exposes open image IDs and bridge-held names to `gimp_status`. The public GIMP 3 `Image.undo_group_start()` method accepts no label, so the name cannot appear in Undo History through this API.
+
 `edit_batch` accepts only the shared `EDIT_OPS` allowlist and 1..100 steps. Each step uses an existing bridge operation; `image_id` is fixed for the batch and all referenced items must belong to it. `{ "$ref": "0.id" }` resolves an earlier result without evaluating code. A single outer undo group surrounds the work and closes in `finally`. Failed steps stop execution and return the completed results plus an error index; partial edits remain for inspection and one GUI undo. No group stays open between requests. File operations, arbitrary Python and generic PDB dispatch are excluded from the bounded batch.
 
 The client never automatically replays a request after dispatch. A missing or mismatched response means the outcome is unknown, not that the edit failed to happen. It closes the connection and tells the caller to reconnect and inspect before retrying.

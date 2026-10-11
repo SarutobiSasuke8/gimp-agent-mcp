@@ -86,14 +86,14 @@ Use `gimp_context(image_id)` to read selected layers and selection bounds. With 
 | Measured output | Pixel colours, alpha bounds, histograms and dominant colours. Sprite packing reopens the exported PNG and compares each cell's decoded RGBA pixels with its source. |
 | Editable work | Named layers, text, paths, masks and non-destructive layer effects. Export an XCF master and delivery files separately. |
 | Everyday editing | Three compact tools cover common adjustments, canvas transforms, fills and simple drawing. Every action reports the installed GEGL or PDB operation it used. |
-| One undo step | `gimp_edit_batch` groups supported edits on one image into one Ctrl+Z step. A failed step stops the batch, reports partial results and closes the group. |
+| One undo step | `gimp_edit_batch` groups supported edits in one call. `gimp_undo_group` holds one image's edits across calls until ended, so one Ctrl+Z can revert the turn. A lost bridge connection closes its groups. |
 | Runtime discovery | Search and describe the installed PDB procedures and GEGL operations, including parameter names, types and enum values. Numeric-array arguments support curves and brush strokes. |
 | Repeatable jobs | Ten recipes and folder batching, plus three bundled workflow skills. |
 | Honest failure handling | A lost connection never silently replays an edit whose outcome is unknown. Reconnect, inspect, then decide whether to retry. |
 
 Other GIMP MCP projects also provide TCP bridges and visual feedback. This project's emphasis is editable output, measurement, grouped edits and reproducible validation. Generic API access is broad, but does not guarantee that every GIMP procedure or GEGL operation works with every argument combination.
 
-## Tools (39)
+## Tools (40)
 
 | Area | Tools |
 |---|---|
@@ -103,7 +103,7 @@ Other GIMP MCP projects also provide TCP bridges and visual feedback. This proje
 | PDB | `gimp_pdb_search`, `gimp_pdb_describe`, `gimp_pdb_call` |
 | Filters | `gimp_filter_search`, `gimp_filter_describe`, `gimp_apply_filter`, `gimp_layer_effects`, `gimp_layer_effect` |
 | Everyday edits | `gimp_adjust`, `gimp_canvas`, `gimp_draw` |
-| Structured edit | `gimp_edit_batch`, `gimp_select`, `gimp_layer_mask`, `gimp_layer`, `gimp_text`, `gimp_list_fonts`, `gimp_path` |
+| Structured edit | `gimp_edit_batch`, `gimp_undo_group`, `gimp_select`, `gimp_layer_mask`, `gimp_layer`, `gimp_text`, `gimp_list_fonts`, `gimp_path` |
 | Cut out | `gimp_remove_background` (optional rembg model runtime) |
 | Automate | `gimp_run_python`, `gimp_list_recipes`, `gimp_run_recipe`, `gimp_batch_recipe` |
 
@@ -139,7 +139,8 @@ gimp_render(image_id=3, overlay=["grid", "layers", "selection"], grid_size=100,
 
 Version **0.5.0**, beta. Tested with Windows GIMP **3.2.4**, Linux GIMP **3.2.2** (Ubuntu 26.04), and macOS 15 GIMP **3.2.4** on Apple Silicon and Intel. Each platform runs the full smoke suite, targeted capability proof and all 23 everyday editing actions against real GIMP. GIMP 2.10 is unsupported; earlier 3.x releases are not part of the current test matrix.
 
-- `gimp_edit_batch` accepts bounded layer, text, selection, path, mask and filter edits. It does not keep a transaction open between separate agent calls or automatically roll back a failed batch. The human uses GIMP's Undo/Redo; there is no invented programmatic undo endpoint.
+- `gimp_edit_batch` accepts bounded layer, text, selection, path, mask and filter edits. `gimp_undo_group(image_id, action="start", name="agent: sticker pass")` holds a group across calls; end it with `action="end"`. `gimp_status` lists open groups. A client disconnect closes its groups. The supplied name is tracked by the bridge, but GIMP 3's public undo-group API cannot set the Undo History label. The human uses GIMP's Undo/Redo; there is no programmatic undo endpoint.
+- `uv run python scripts/undo_group_smoke.py` checks three edits against a pre-turn snapshot after you press Ctrl+Z once in a GUI GIMP session. The headless `gimp-agent-mcp smoke` check covers group lifecycle and disconnect cleanup.
 - Some GEGL source operations, including linear gradients, are not drawable filters. Use the PDB gradient-fill procedure instead. Vector warp/liquify parity is not claimed.
 - Sprite packing currently takes equal-sized PNG files, without padding or direct open-layer input. It does not align animation or pack mixed-size rectangles.
 - Long filters are synchronous. Mid-filter cancellation and progress reporting remain follow-up work.
