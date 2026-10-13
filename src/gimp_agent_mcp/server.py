@@ -82,7 +82,7 @@ def gimp_help(topic: str = "start") -> str:
 
 @mcp.tool()
 def gimp_status() -> dict[str, Any]:
-    """Check whether GIMP and the agent bridge are reachable. Returns GIMP version, mode, and open images."""
+    """Check whether GIMP and the bridge are reachable, including the active image, selected layers and selection."""
     info = _client.ping()
     if info is None:
         from . import paths
@@ -132,7 +132,7 @@ def gimp_shutdown(quit_gimp: bool | None = None) -> dict[str, Any]:
 
 @mcp.tool()
 def gimp_context(image_id: int | None = None, selected_layer_ids: list[int] | None = None, present: bool = False) -> dict[str, Any]:
-    """Read a document's selected layers, selection bounds and bridge colour/brush context. Optionally select layers or present a GUI document. With multiple images pass image_id; focused-image detection is unavailable, never inferred from list order."""
+    """Read one document's selected layers, selection bounds and bridge colour/brush context. Pass image_id when multiple images are open; use gimp_status for the active user display. Optionally select layers or present a GUI document."""
     return _call("context", {"image_id": image_id, "selected_layer_ids": selected_layer_ids, "present": present})
 
 
@@ -152,8 +152,8 @@ def gimp_undo_group(image_id: int, action: Literal["start", "end"], name: str | 
 
 
 @mcp.tool()
-def gimp_list_images() -> list[dict[str, Any]]:
-    """List open images with ids, dimensions, file path, and layer count."""
+def gimp_list_images() -> dict[str, Any]:
+    """List open images and report the active image, selected layers, selection bounds and dirty state."""
     return _call("list_images")
 
 

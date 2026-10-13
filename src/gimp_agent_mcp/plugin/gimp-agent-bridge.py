@@ -222,6 +222,35 @@ def _image_info(image):
     return info
 
 
+def _active_image_context(images):
+    """Read the image shown by GIMP's active user display, if there is one."""
+    active = None
+    if images:
+        try:
+            user_context = Gimp.get_user_context()
+            display = user_context.get_display()
+            if display is not None and display.is_valid():
+                # The user context follows the image attached to the active display. Do
+                # not infer focus from Gimp.get_images() ordering.
+                candidate = user_context.get_image()
+                if candidate is not None and candidate.is_valid():
+                    active = next((image for image in images if image.get_id() == candidate.get_id()), None)
+        except Exception:
+            active = None
+
+    summaries = [_image_summary(image) for image in images]
+    if active is None:
+        return core.active_image_context(summaries)
+
+    bounds = tuple(Gimp.Selection.bounds(active))[-5:]
+    return core.active_image_context(
+        summaries,
+        active.get_id(),
+        [layer.get_id() for layer in active.get_selected_layers()],
+        bounds,
+    )
+
+
 # --------------------------------------------------------------------------- coercion
 
 
@@ -589,14 +618,16 @@ class Bridge:
                 "recovery": "One Ctrl+Z in GIMP reverts the batch, including any partial failing step. No automatic rollback."}
 
     def op_ping(self, params):
+        images = [img for img in Gimp.get_images() if img.get_id() not in self.snapshots]
         return {
             "bridge_version": core.BRIDGE_VERSION,
             "gimp_version": Gimp.version(),
             "python_version": sys.version.split()[0],
             "mode": self.mode,
             "pid": os.getpid(),
-            "images": [_image_summary(img) for img in Gimp.get_images() if img.get_id() not in self.snapshots],
+            "images": [_image_summary(img) for img in images],
             "open_agent_undo_groups": self.undo_groups.open_groups(),
+            **_active_image_context(images),
             "config_dir": Gimp.directory(),
         }
 
@@ -648,7 +679,8 @@ class Bridge:
         }
 
     def op_list_images(self, params):
-        return [_image_summary(img) for img in Gimp.get_images() if img.get_id() not in self.snapshots]
+        images = [img for img in Gimp.get_images() if img.get_id() not in self.snapshots]
+        return {"images": [_image_summary(img) for img in images], **_active_image_context(images)}
 
     def op_image_info(self, params):
         return _image_info(_get_image(params["image_id"]))

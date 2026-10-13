@@ -102,6 +102,26 @@ class UndoGroupRegistry:
             closed.append(image_id)
         return closed
 
+def active_image_context(images, active_image_id=None, active_layer_ids=None, selection_bounds=None):
+    """Build the JSON-safe user context for the active image from image summaries."""
+    active = next((image for image in images if image["id"] == active_image_id), None)
+    if active is None:
+        return {
+            "active_image_id": None,
+            "active_layer_ids": [],
+            "selection": None,
+            "active_image_dirty": None,
+        }
+
+    bounds = selection_bounds or (False, 0, 0, 0, 0)
+    non_empty, x1, y1, x2, y2 = bounds[-5:]
+    return {
+        "active_image_id": active["id"],
+        "active_layer_ids": list(active_layer_ids or []),
+        "selection": {"non_empty": bool(non_empty), "x1": x1, "y1": y1, "x2": x2, "y2": y2},
+        "active_image_dirty": bool(active["dirty"]),
+    }
+
 
 def validate_render_overlay(overlay, points=None, grid_size=100):
     """Validate and normalise diagnostic-render arguments without importing GIMP."""

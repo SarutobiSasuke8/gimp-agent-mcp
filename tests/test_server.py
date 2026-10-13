@@ -35,6 +35,35 @@ def test_tool_surface():
         assert required in names
 
 
+def test_status_returns_active_context_from_mocked_bridge(monkeypatch):
+    context = {
+        "active_image_id": 7,
+        "active_layer_ids": [18],
+        "selection": {"non_empty": True, "x1": 2, "y1": 3, "x2": 12, "y2": 13},
+        "active_image_dirty": True,
+    }
+    monkeypatch.setattr(server._client, "ping", lambda: {"mode": "gui", "images": [], **context})
+    monkeypatch.setattr(server, "_freshness", lambda _info: {})
+
+    result = server.gimp_status()
+
+    assert {key: result[key] for key in context} == context
+    assert result["connected"] is True
+
+
+def test_list_images_returns_images_and_active_context_from_mocked_bridge(monkeypatch):
+    payload = {
+        "images": [{"id": 7, "name": "Untitled", "selected_layer_ids": [18]}],
+        "active_image_id": 7,
+        "active_layer_ids": [18],
+        "selection": {"non_empty": False, "x1": 0, "y1": 0, "x2": 0, "y2": 0},
+        "active_image_dirty": False,
+    }
+    monkeypatch.setattr(server, "_call", lambda op, params=None, timeout=None: payload if op == "list_images" else None)
+
+    assert server.gimp_list_images() == payload
+
+
 def test_adjust_resolves_operation_before_apply(monkeypatch):
     calls = []
 
