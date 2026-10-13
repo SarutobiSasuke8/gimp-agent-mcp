@@ -76,7 +76,7 @@ Claude Code can also install the server and skills as a plugin; see [skills inst
 - **A shortcut:** `uvx gimp-agent-mcp shortcut` creates a launcher that starts GIMP with the bridge enabled.
 - **Agent-launched:** `gimp_launch(mode="gui")` opens GIMP; `mode="headless"` runs without a window.
 
-Use `gimp_context(image_id)` to read selected layers and selection bounds. With several images open, the agent must choose an explicit image ID; GIMP's public API does not reliably expose which document has keyboard focus. `gimp_context(..., present=true)` can bring a specified document forward. If multiple bridges run, `gimp_status` follows the newest bridge file; isolate test profiles when a user session is active.
+`gimp_status` and `gimp_list_images` report the image attached to GIMP's active user display, its selected layer ids, selection bounds and dirty state. When the user says "this layer" or "the selection", read that context before editing. Use `gimp_context(image_id)` for a specific document or to bring it forward with `present=true`. If multiple bridges run, `gimp_status` follows the newest bridge file; isolate test profiles when a user session is active.
 
 ## What makes this useful
 

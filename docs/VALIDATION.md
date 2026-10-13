@@ -36,4 +36,4 @@ Both this project and maorcc/gimp-mcp support visual feedback and visible editin
 
 Proven targeted equivalents include PDB curves with numeric arrays, linear gradients, paintbrush/pencil strokes and image rotation. Tested additional behaviours include grouped edits with partial-failure reporting, cross-document rejection, hidden-parent layer isolation and hidden-top-layer comparison compositing.
 
-Not claimed: complete warp-vector equivalence, named social-platform export presets, open-layer sprite packing, sprite padding, GUI-focused-image detection, programmatic undo/redo, macOS validation, or the correctness of every installed third-party PDB procedure. No competitor runtime results are inferred from their README.
+Not claimed: complete warp-vector equivalence, named social-platform export presets, open-layer sprite packing, sprite padding, live GUI-focused-image accuracy (operator check pending), programmatic undo/redo, macOS validation, or the correctness of every installed third-party PDB procedure. No competitor runtime results are inferred from their README.

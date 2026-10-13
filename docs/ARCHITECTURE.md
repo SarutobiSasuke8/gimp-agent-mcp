@@ -30,6 +30,8 @@ Response:
 
 Ops: `context`, `edit_batch`, `ping`, `shutdown`, `exec`, `list_images`, `image_info`, `new_image`, `open`, `export`, `export_with`, `close_image`, `render`, `layer_png`, `snapshot`, `drop_snapshot`, `render_compare`, `pixel_color`, `alpha_bbox`, `histogram`, `dominant_colors`, `pdb_search`, `pdb_describe`, `pdb_call`, `filter_search`, `filter_describe`, `apply_filter`, `list_filters_on_layer`, `layer_effect`, `select`, `layer_mask`, `set_mask_pixels`, `layer`, `list_fonts`, `text`, `path`.
 
+`ping` and `list_images` resolve the active image through GIMP's user context and its active display. Both return `active_image_id`, `active_layer_ids`, selection bounds and `active_image_dirty`; `list_images` wraps its image summaries in an `images` field so this context can accompany the list without guessing from image order. With no active display, the image id and dirty state are `null`, layer ids are empty, and selection is `null`.
+
 ## Pixels
 
 Measurement ops read pixels straight from the drawable's `GeglBuffer`. Colour reads use `R'G'B'A u8`; alpha bounds scan full-resolution `A u8` data in bounded horizontal bands, so large-layer bounds remain exact. Mask writes go through the drawable's shadow buffer (`get_shadow_buffer` -> `set` -> `merge_shadow` -> `update`), which keeps them undoable.
