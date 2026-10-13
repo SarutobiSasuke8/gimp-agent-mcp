@@ -208,7 +208,7 @@ finally:
             sid = call("snapshot", image_id=iid)["snapshot_id"]
             snapshots.append(sid)
             assert sid not in [i["id"] for i in call("ping")["images"]]
-            assert sid not in [i["id"] for i in call("list_images")]
+            assert sid not in [i["id"] for i in call("list_images")["images"]]
             assert call("drop_snapshot", snapshot_id=sid)["dropped"] == sid
             snapshots.remove(sid)
             return "snapshot released and excluded from status documents"
