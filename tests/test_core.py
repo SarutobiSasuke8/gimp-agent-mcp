@@ -5,6 +5,37 @@ import pytest
 from gimp_agent_mcp.plugin import agent_bridge_core as core
 
 
+def test_active_image_context_when_no_images_are_open():
+    assert core.active_image_context([]) == {
+        "active_image_id": None,
+        "active_layer_ids": [],
+        "selection": None,
+        "active_image_dirty": None,
+    }
+
+
+def test_active_image_context_with_one_image_and_empty_selection():
+    images = [{"id": 4, "dirty": False}]
+    result = core.active_image_context(images, 4, [9], (False, 0, 0, 0, 0))
+    assert result == {
+        "active_image_id": 4,
+        "active_layer_ids": [9],
+        "selection": {"non_empty": False, "x1": 0, "y1": 0, "x2": 0, "y2": 0},
+        "active_image_dirty": False,
+    }
+
+
+def test_active_image_context_selects_the_active_image_not_list_order():
+    images = [{"id": 2, "dirty": False}, {"id": 7, "dirty": True}]
+    result = core.active_image_context(images, 7, [18, 19], (True, 10, 20, 50, 60))
+    assert result == {
+        "active_image_id": 7,
+        "active_layer_ids": [18, 19],
+        "selection": {"non_empty": True, "x1": 10, "y1": 20, "x2": 50, "y2": 60},
+        "active_image_dirty": True,
+    }
+
+
 def test_encode_decode_roundtrip():
     payload = {"id": "1", "op": "ping", "params": {"x": 1, "text": "héllo"}}
     line = core.encode_message(payload)

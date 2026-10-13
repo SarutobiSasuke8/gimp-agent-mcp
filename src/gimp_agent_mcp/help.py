@@ -12,7 +12,9 @@ HOW TO WORK WITH GIMP THROUGH THIS SERVER
    launching a second GIMP; then you work in their window and they can edit alongside you. gimp_status reports
    mode "gui" when that is the case; prefer it for anything the user will look at.
 2. Everything is addressed by integer ids. gimp_open / gimp_new_image return an image id and its layers;
-   gimp_image_info(image_id) gives the full layer tree with item ids. Never guess ids.
+   gimp_image_info(image_id) gives the full layer tree with item ids. Never guess ids. gimp_status and
+   gimp_list_images report active_image_id, active_layer_ids, selection bounds and active_image_dirty from
+   GIMP's active display. When the user says "this layer" or "the selection", read that context first.
 3. Edit, then LOOK: gimp_render(image_id) after each meaningful step. Use region={x,y,width,height} to zoom.
 4. Edit, then MEASURE: gimp_measure(kind="bbox"|"color"|"histogram"|"dominant") answers questions a render cannot.
 5. Before a risky edit, gimp_snapshot(image_id); afterwards gimp_render_compare(image_id, snapshot_id) shows
@@ -226,9 +228,10 @@ its undo group. One Ctrl+Z in GIMP reverts it; there is no automatic rollback or
 Do not wrap file exports, Python or arbitrary PDB calls in this batch. Existing gimp_run_python(image_id=...)
 can group custom Python when needed. After any uncertain connection outcome, inspect before retrying.
 
-gimp_context(image_id) reports selected layers and selection bounds. With multiple documents, pass an
-explicit image_id; focused-image detection is not available. selected_layer_ids changes layer selection;
-present=True presents that document in GUI mode. Brush/colours are the bridge context, not a live toolbox mirror.
+gimp_context(image_id) reports selected layers and selection bounds for one explicit document. Read
+gimp_status or gimp_list_images to identify the user's active display before acting on "this layer" or
+"the selection". selected_layer_ids changes layer selection; present=True presents that document in GUI
+mode. Brush/colours are the bridge context, not a live toolbox mirror.
 
 Drop unused snapshots with gimp_drop_snapshot(snapshot_id); at most 16 are retained.
 """
