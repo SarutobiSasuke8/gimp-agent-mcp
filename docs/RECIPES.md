@@ -67,6 +67,6 @@ To pack layers that are already open, pass `input_layer_ids` instead of `input_p
 
 For Phaser, `this.load.atlas('sprites', 'out/sprites.png', 'out/sprites.json');` then `this.add.image(x, y, 'sprites', 'ship.png')`. Frame names are the source file names.
 
-Run `python scripts/sprite_sheet_proof.py OUTPUT_DIRECTORY` from the development environment for a real MCP stdio proof: procedural GIMP frames, packing, re-open verification, slicing round-trips with and without spacing, a trimmed and padded mixed-size atlas, a power-of-two atlas, and failure cases. No image-generation service or optional imaging library is required.
+Run `python scripts/sprite_sheet_proof.py OUTPUT_DIRECTORY` from the development environment for a real MCP stdio proof: procedural GIMP frames, packing, re-open verification, slicing round-trips with and without spacing, a trimmed and padded mixed-size atlas, a power-of-two atlas, and failure cases. No image-generation service or optional imaging library is required. Calls that do not need GIMP, including open-layer parameters, common social crop sizes and the unsupported warp boundary, are in [Asset workflows](ASSET_WORKFLOWS.md).
 
 Recipe parameter types are validated before execution. Integer parameters reject booleans and fractional/string values; declared minimums are enforced. Nullable defaults remain supported and mutable defaults are copied per invocation. Slice margins now apply on all four sides; partial edge cells are excluded.

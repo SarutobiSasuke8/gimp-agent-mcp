@@ -133,7 +133,7 @@ gimp_render(image_id=3, overlay=["grid", "layers", "selection"], grid_size=100,
 | `contact_sheet` | Labelled thumbnails from a folder. |
 | `fit_and_export` | Fit to a maximum edge and export by extension. |
 
-[Recipe arguments and examples](docs/RECIPES.md) · [Skills](docs/SKILLS.md)
+[Recipe arguments and examples](docs/RECIPES.md) · [Asset workflows](docs/ASSET_WORKFLOWS.md) · [Skills](docs/SKILLS.md)
 
 ## Tested scope and limits
 

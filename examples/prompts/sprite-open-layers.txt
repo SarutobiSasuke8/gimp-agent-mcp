@@ -1,0 +1,16 @@
+Pack the layers that are already open into a mixed-size atlas. Do not export them to PNG first.
+
+Call gimp_image_info and read the raster layer ids and their names. Names must be unique. Skip group layers.
+
+Use gimp_run_recipe with name "sprite_atlas_pack" and params:
+  input_layer_ids: those integer ids
+  output_path: a new .png path
+  padding: 2
+  trim: false
+  max_width: 2048
+
+Do not also pass input_paths. The recipe accepts exactly one of input_paths or input_layer_ids.
+
+Expected output
+---------------
+A PNG, a layered XCF and a JSON atlas, same stem. verification is "exact RGBA match, transparent padding". Each placement is at least padding pixels from its neighbours and from the atlas edge. Frame keys are the layer names. The source documents stay open and unchanged: same layer count, same pixel values. trim true would pack measured alpha bounds instead of the full layer canvas and record spriteSourceSize; this prompt leaves trim false.
