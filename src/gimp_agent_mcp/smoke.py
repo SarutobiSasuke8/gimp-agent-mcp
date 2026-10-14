@@ -331,6 +331,32 @@ def run_smoke(mode: str = "headless", keep: bool = False, verbose: bool = True, 
 
     check("recipe compose (manifest)", _recipe_compose)
 
+    def _recipe_social_crop():
+        profiles = [{"name": "wide", "width": 150, "height": 50}, {"name": "tall", "width": 40, "height": 90}]
+        out = client.call("exec", {"code": _recipe_code("social_crop", {
+            "input_path": png_path, "output_dir": str(tmpdir / "social"), "profiles": profiles,
+            "focus": {"x": 120, "y": 30},
+        })}, timeout=300)
+        res = out["result"]
+        for o, p in zip(res["outputs"], profiles, strict=True):
+            assert o["measured"] == {"width": p["width"], "height": p["height"]}, o
+            assert o["pixel_check"] == "exact RGBA match", o
+            assert 0 <= o["focus_after"]["x"] < p["width"] and 0 <= o["focus_after"]["y"] < p["height"], o
+            with open(o["path"], "rb") as fh:
+                assert _png_size(fh.read()) == (p["width"], p["height"])
+        try:
+            client.call("exec", {"code": _recipe_code("social_crop", {
+                "input_path": png_path, "output_dir": str(tmpdir / "social-refused"), "fit": "crop",
+                "profiles": [{"name": "huge", "width": 400, "height": 50}]})}, timeout=300)
+        except BridgeError as exc:
+            assert "does not fit" in str(exc), exc
+        else:
+            raise AssertionError("a profile larger than the source was not refused with fit='crop'")
+        assert not (tmpdir / "social-refused").exists()
+        return [o["profile"] for o in res["outputs"]]
+
+    check("recipe social_crop (measured profiles)", _recipe_social_crop)
+
     def _help():
         from . import help as helpdoc
 

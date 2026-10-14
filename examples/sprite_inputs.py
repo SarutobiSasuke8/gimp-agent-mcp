@@ -17,7 +17,7 @@ JSON on stdout, exit code 0. It contains:
 - ``sprite_atlas_pack`` parameters for PNG paths, and a second call that uses
   ``input_layer_ids`` instead. Defaults are padding 2, trim false, max_width
   2048. The exclusive choice (paths or layer ids, not both and not neither) is
-  enforced by the recipe body inside GIMP, not by ``resolve_params``.
+  enforced by ``resolve_params`` (the recipe's ``VALIDATE``) and again inside GIMP.
 - Placements from ``sprite_atlas_pack.pack_rects`` for seven mixed canvases at
   padding 2 and max_width 256. Rectangles do not overlap, stay at least
   ``padding`` pixels apart, and do not touch the atlas edge. The same sizes

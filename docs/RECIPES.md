@@ -70,3 +70,13 @@ For Phaser, `this.load.atlas('sprites', 'out/sprites.png', 'out/sprites.json');`
 Run `python scripts/sprite_sheet_proof.py OUTPUT_DIRECTORY` from the development environment for a real MCP stdio proof: procedural GIMP frames, packing, re-open verification, slicing round-trips with and without spacing, a trimmed and padded mixed-size atlas, a power-of-two atlas, and failure cases. No image-generation service or optional imaging library is required. Calls that do not need GIMP, including open-layer parameters, common social crop sizes and the unsupported warp boundary, are in [Asset workflows](ASSET_WORKFLOWS.md).
 
 Recipe parameter types are validated before execution. Integer parameters reject booleans and fractional/string values; declared minimums are enforced. Nullable defaults remain supported and mutable defaults are copied per invocation. Slice margins now apply on all four sides; partial edge cells are excluded.
+
+## Social crop profiles
+
+Call `gimp_run_recipe("social_crop", {"input_path": "photo.jpg", "output_dir": "out/social", "profiles": ["open_graph", "story_reel"], "focus": {"x": 1680, "y": 420}})`.
+
+Built-in profiles: `open_graph` 1200 × 630, `x_landscape` 1600 × 900, `instagram_square` 1080 × 1080, `instagram_portrait` 1080 × 1350, `story_reel` 1080 × 1920, `youtube_thumbnail` 1280 × 720. Pass `["all"]` for every one, or custom `{"name", "width", "height"}` objects. Files are named `<stem>-<profile>.<format>` (`image-<id>` when exporting from `image_id`).
+
+`fit="cover"` scales by the smallest factor that covers the profile and then crops; enlarging is refused unless `allow_upscale=true`. `fit="crop"` keeps scale 1 and refuses profiles that do not fit. The crop is centred on `focus` (default: the centre) and clamped to the image, so the focus pixel is always in the output. All profiles are planned before anything is written. Each output is reopened and its measured size must equal the profile; PNG output must also match the cropped pixels exactly. The result lists, per profile, `measured`, `scale`, the crop origin `x`/`y` in scaled pixels, `focus_after` and `pixel_check`.
+
+The planner (`plan_crop`, `resolve_profiles`) is plain Python shared by the recipe and the unit tests. Recipes may also define `VALIDATE(params)`: the server calls it after defaults and types, so wrong combinations (both or neither input, unknown profile, bad `fit`) fail before GIMP is asked. `sprite_atlas_pack` now uses this for its exactly-one-input rule.
