@@ -97,3 +97,7 @@ Snapshots are private comparison images: excluded from document lists, limited t
 For POSIX launches, the GIMP executable's directory precedes uv's virtualenv on PATH; PYTHONHOME/PYTHONPATH/VIRTUAL_ENV are removed from the child environment. GIMP's own plug-ins can therefore use the Python GI runtime that belongs to its installation. Windows uses the packaged GIMP runtime unchanged. Headless launches also use --new-instance.
 
 The server-side BridgeClient uses a reentrant lock to serialize parallel MCP calls over its single socket, including reconnects. This does not introduce any threads in the GIMP plug-in. A zero-byte send closes a dead peer rather than spinning forever.
+
+## Brand kits
+
+`gimp_brand` and `brands.py` run entirely in the MCP server; there is no new bridge op. Profiles are JSON files named `<name>.json` under the per-user config directory (`GIMP_AGENT_BRANDS_DIR` overrides) and are validated on read and write: names are restricted to lowercase letters, digits, `-` and `_` (which also rules out path traversal), colours must parse with the shared colour parser, canvases are integer pairs, and colour, font and asset keys share one token namespace so `@key` is never ambiguous. `set` checks fonts with the existing `list_fonts` op by exact name. For `compose`, `gimp_run_recipe` resolves the manifest (reading `manifest_path` in the server only when a brand is involved) and sends GIMP an inline manifest of literal values, so the recipe source and protocol are unchanged and GIMP receives the same manifest as the hand-inlined equivalent.
