@@ -395,6 +395,8 @@ class Bridge:
         )
         self.snapshots = {}
         self.displays = {}
+        self.undo_groups = core.UndoGroupRegistry()
+        self._request_owner = None
         self.ns["bridge"] = self
         self.ns["image_by_id"] = _get_image
         self.ns["item_by_id"] = _get_item
@@ -465,7 +467,7 @@ class Bridge:
         self.clients[id(conn)] = conn
         return True
 
-    def _handle_request(self, request):
+    def _handle_request(self, request, connection=None):
         req_id = request.get("id")
         if request.get("token") != self.token:
             return {"id": req_id, "ok": False, "error": {"type": "Unauthorized", "message": "bad or missing token"}}
@@ -473,6 +475,7 @@ class Bridge:
         params = request.get("params") or {}
         if not isinstance(op, str) or not hasattr(self, "op_" + op):
             return {"id": req_id, "ok": False, "error": {"type": "UnknownOp", "message": f"unknown op {op!r}"}}
+        self._request_owner = id(connection) if connection is not None else None
         try:
             result = {"ok": True, "result": getattr(self, "op_" + op)(params)}
         except Exception as exc:
@@ -480,10 +483,29 @@ class Bridge:
                 "ok": False,
                 "error": {"type": type(exc).__name__, "message": str(exc), "traceback": traceback.format_exc()},
             }
+        finally:
+            self._request_owner = None
         result["id"] = req_id
         return result
 
     # -- helpers -------------------------------------------------------------------
+
+    def _undo_start(self, image):
+        return self.undo_groups.begin_op(image, self._request_owner)
+
+    def _undo_end(self, image):
+        self.undo_groups.end_op(image)
+
+    def op_undo_group(self, params):
+        action = params.get("action")
+        if action == "start":
+            image = _get_image(params.get("image_id"))
+            return self.undo_groups.start(image, self._request_owner, params.get("name"))
+        if action == "end":
+            if params.get("image_id") is None:
+                raise BridgeError("image_id is required")
+            return self.undo_groups.end(int(params["image_id"]), self._request_owner)
+        raise BridgeError("action must be start or end")
 
     def _query_procedures(self, name_pattern):
         args = [name_pattern, "", "", "", "", "", ""]
@@ -571,7 +593,7 @@ class Bridge:
             raise BridgeError("undo is disabled for this image; cannot create an undoable batch")
         results = []
         error = None
-        if not image.undo_group_start():
+        if not self._undo_start(image):
             raise BridgeError("could not start undo group")
         try:
             for index, step in enumerate(steps):
@@ -589,7 +611,7 @@ class Bridge:
                     error = {"step": index, "type": type(exc).__name__, "message": str(exc)}
                     break
         finally:
-            image.undo_group_end()
+            self._undo_end(image)
             self._flush()
         return {"complete": error is None, "image_id": image.get_id(), "completed_steps": len(results),
                 "results": results, "error": error, "undo_group_closed": True,
@@ -604,6 +626,7 @@ class Bridge:
             "mode": self.mode,
             "pid": os.getpid(),
             "images": [_image_summary(img) for img in images],
+            "open_agent_undo_groups": self.undo_groups.open_groups(),
             **_active_image_context(images),
             "config_dir": Gimp.directory(),
         }
@@ -635,7 +658,7 @@ class Bridge:
         out, err = io.StringIO(), io.StringIO()
         result = None
         if image is not None:
-            image.undo_group_start()
+            self._undo_start(image)
         try:
             with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
                 try:
@@ -647,7 +670,7 @@ class Bridge:
                     result = eval(compiled, self.ns)
         finally:
             if image is not None:
-                image.undo_group_end()
+                self._undo_end(image)
             self._flush()
         return {
             "stdout": core.truncate(out.getvalue()),
@@ -969,12 +992,12 @@ class Bridge:
             with contextlib.suppress(Exception):
                 image = _get_image(args[image_key]["id"] if isinstance(args[image_key], dict) else args[image_key])
         if image is not None:
-            image.undo_group_start()
+            self._undo_start(image)
         try:
             values = proc.run(config)
         finally:
             if image is not None:
-                image.undo_group_end()
+                self._undo_end(image)
             self._flush()
         status = values.index(0)
         out = [_serialise(values.index(i)) for i in range(1, values.length())]
@@ -1028,7 +1051,7 @@ class Bridge:
         if not isinstance(props, dict):
             raise BridgeError("params must be an object of GEGL property values")
         image = item.get_image()
-        image.undo_group_start()
+        self._undo_start(image)
         try:
             try:
                 filt = Gimp.DrawableFilter.new(item, op, str(params.get("name") or op))
@@ -1062,7 +1085,7 @@ class Bridge:
             else:
                 raise BridgeError("mode must be 'merge' or 'append'")
         finally:
-            image.undo_group_end()
+            self._undo_end(image)
             self._flush()
         return {"applied": op, "mode": mode, "layer": _item_info(item)}
 
@@ -1286,7 +1309,7 @@ class Bridge:
         image = _get_image(params["image_id"])
         mode = str(params.get("mode") or "bounds").lower()
         op = _coerce_enum(params.get("op") or "replace", Gimp.ChannelOps.__gtype__)
-        image.undo_group_start()
+        self._undo_start(image)
         try:
             if mode == "rect":
                 image.select_rectangle(op, float(params["x"]), float(params["y"]), float(params["width"]), float(params["height"]))
@@ -1323,7 +1346,7 @@ class Bridge:
             elif mode != "bounds":
                 raise BridgeError("unknown selection mode " + mode)
         finally:
-            image.undo_group_end()
+            self._undo_end(image)
             self._flush()
         non_empty, x1, y1, x2, y2 = tuple(Gimp.Selection.bounds(image))[-5:]
         return {"non_empty": bool(non_empty), "x1": x1, "y1": y1, "x2": x2, "y2": y2, "width": x2 - x1, "height": y2 - y1}
@@ -1334,7 +1357,7 @@ class Bridge:
             raise BridgeError("layer_id must reference a layer")
         action = str(params.get("action") or "add").lower()
         image = layer.get_image()
-        image.undo_group_start()
+        self._undo_start(image)
         try:
             if action == "add":
                 if layer.get_mask() is not None:
@@ -1353,7 +1376,7 @@ class Bridge:
             else:
                 raise BridgeError("action must be add, apply, remove, enable, disable, show or hide")
         finally:
-            image.undo_group_end()
+            self._undo_end(image)
             self._flush()
         return _item_info(layer)
 
@@ -1369,7 +1392,7 @@ class Bridge:
         if (w, h) != (layer.get_width(), layer.get_height()):
             raise BridgeError(f"mask size {w}x{h} does not match layer {layer.get_width()}x{layer.get_height()}")
         image = layer.get_image()
-        image.undo_group_start()
+        self._undo_start(image)
         try:
             mask = layer.get_mask()
             if mask is None:
@@ -1383,7 +1406,7 @@ class Bridge:
             if bool(params.get("apply", False)):
                 layer.remove_mask(Gimp.MaskApplyMode.APPLY)
         finally:
-            image.undo_group_end()
+            self._undo_end(image)
             self._flush()
         return _item_info(layer)
 
@@ -1410,7 +1433,7 @@ class Bridge:
             return _item_info(layer)
         layer = _get_item(params["layer_id"])
         image = layer.get_image()
-        image.undo_group_start()
+        self._undo_start(image)
         try:
             if action == "info":
                 pass
@@ -1458,7 +1481,7 @@ class Bridge:
             else:
                 raise BridgeError("unknown layer action " + action)
         finally:
-            image.undo_group_end()
+            self._undo_end(image)
             self._flush()
         return _item_info(layer)
 
@@ -1530,7 +1553,7 @@ class Bridge:
             image = layer.get_image()
         if image is None:
             raise BridgeError("image_id or layer_id is required")
-        image.undo_group_start()
+        self._undo_start(image)
         try:
             size = float(params.get("size", 32))
             if layer is None:
@@ -1560,7 +1583,7 @@ class Bridge:
             if params.get("name") is not None:
                 layer.set_name(str(params["name"]))
         finally:
-            image.undo_group_end()
+            self._undo_end(image)
             self._flush()
         info = _item_info(layer)
         info["text"] = layer.get_text()
@@ -1600,7 +1623,7 @@ class Bridge:
         if not isinstance(path, Gimp.Path):
             raise BridgeError("path_id must reference a path")
         image = path.get_image()
-        image.undo_group_start()
+        self._undo_start(image)
         Gimp.context_push()
         try:
             if action == "select":
@@ -1627,7 +1650,7 @@ class Bridge:
                 raise BridgeError("action must be create, select, stroke, fill or delete")
         finally:
             Gimp.context_pop()
-            image.undo_group_end()
+            self._undo_end(image)
             self._flush()
         return _item_info(path)
 
@@ -1684,6 +1707,8 @@ class ClientConnection:
         )
 
     def close(self):
+        with contextlib.suppress(Exception):
+            self.bridge.undo_groups.close_owner(id(self))
         self.bridge.clients.pop(id(self), None)
         if self.watch:
             with contextlib.suppress(Exception):
@@ -1735,7 +1760,7 @@ class ClientConnection:
                 response = {"ok": False, "error": {"type": "BadRequest", "message": str(exc)}}
                 request = {}
             else:
-                response = self.bridge._handle_request(request)
+                response = self.bridge._handle_request(request, self)
             try:
                 self._send(response)
             except OSError:

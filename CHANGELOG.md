@@ -8,6 +8,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
+- `gimp_undo_group` can hold one image's edits across agent calls and closes held groups on client disconnect. `gimp_status` lists open groups. GIMP's public undo API cannot set a custom Undo History label, so the supplied name is bridge metadata only.
+
+
 - `gimp_status` and `gimp_list_images` report the active image and its selected layers, selection bounds and dirty state through GIMP's active user display. `gimp_list_images` now returns an object with an `images` array and the active-context fields.
 - `sprite_atlas_pack`: mixed-size PNG sprites to a padded texture atlas (MaxRects, bottom-left rule) with optional trimming to measured alpha bounds, a width cap and power-of-two sizing. Writes a layered XCF and TexturePacker-style JSON (`frame`, `spriteSourceSize`, `sourceSize`, `trimmed`) that Phaser's `load.atlas` reads. The exported PNG is reopened and every placed rectangle must match its decoded source RGBA exactly, with all padding and unused area transparent.
 - `sprite_atlas_pack` also takes `input_layer_ids`: open, non-group layers packed in place and keyed by layer name, with the same verification. Source documents are read, never modified or closed.

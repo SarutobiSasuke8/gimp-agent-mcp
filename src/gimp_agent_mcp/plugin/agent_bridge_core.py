@@ -26,6 +26,82 @@ DEFAULT_TIMEOUT = 180.0
 RENDER_OVERLAYS = {"grid", "layers", "selection", "points"}
 
 
+class UndoGroupRegistry:
+    """Track agent-held undo groups without depending on GIMP or gi."""
+
+    def __init__(self):
+        self._held = {}
+        self._depth = {}
+
+    def open_groups(self):
+        return [{"image_id": image_id, "name": group["name"]}
+                for image_id, group in sorted(self._held.items())]
+
+    def start(self, image, owner, name):
+        image_id = image.get_id()
+        if image_id in self._held:
+            raise ValueError(f"image {image_id} already has an open agent undo group")
+        if self._depth.get(image_id):
+            raise ValueError("cannot open an agent undo group during an edit")
+        if not isinstance(name, str) or not name.strip() or len(name.strip()) > 80 or "\n" in name or "\r" in name:
+            raise ValueError("name must be 1..80 characters on one line")
+        if not image.undo_is_enabled():
+            raise ValueError("undo is disabled for this image")
+        if not image.undo_group_start():
+            raise ValueError("GIMP could not start the undo group")
+        self._held[image_id] = {"image": image, "owner": owner, "name": name.strip()}
+        return {"image_id": image_id, "name": name.strip(), "open": True}
+
+    def end(self, image_id, owner):
+        group = self._held.get(image_id)
+        if group is None:
+            raise ValueError(f"image {image_id} has no open agent undo group")
+        if group["owner"] != owner:
+            raise ValueError("only the client that opened this undo group can close it")
+        if self._depth.get(image_id):
+            raise ValueError("cannot close an agent undo group during an edit")
+        if not group["image"].undo_group_end():
+            raise ValueError("GIMP could not end the undo group")
+        del self._held[image_id]
+        return {"image_id": image_id, "name": group["name"], "open": False}
+
+    def begin_op(self, image, owner):
+        image_id = image.get_id()
+        group = self._held.get(image_id)
+        if group is not None and group["owner"] != owner:
+            raise ValueError("another client holds this image's undo group")
+        depth = self._depth.get(image_id, 0)
+        if depth == 0 and group is None and not image.undo_group_start():
+            raise ValueError("GIMP could not start the undo group")
+        self._depth[image_id] = depth + 1
+        return True
+
+    def end_op(self, image):
+        image_id = image.get_id()
+        depth = self._depth.get(image_id, 0)
+        if depth == 0:
+            raise ValueError("undo group end without start")
+        if depth > 1:
+            self._depth[image_id] = depth - 1
+        else:
+            del self._depth[image_id]
+            if image_id not in self._held and not image.undo_group_end():
+                raise ValueError("GIMP could not end the undo group")
+
+    def close_owner(self, owner):
+        closed = []
+        for image_id, group in list(self._held.items()):
+            if group["owner"] != owner:
+                continue
+            try:
+                group["image"].undo_group_end()
+            except Exception:
+                pass  # A closed image has no undo stack left to hold open.
+            finally:
+                del self._held[image_id]
+            closed.append(image_id)
+        return closed
+
 def active_image_context(images, active_image_id=None, active_layer_ids=None, selection_bounds=None):
     """Build the JSON-safe user context for the active image from image summaries."""
     active = next((image for image in images if image["id"] == active_image_id), None)
