@@ -1,0 +1,12 @@
+The user asked for a liquify or warp. Do not apply one and do not claim parity.
+
+There is no warp recipe, no gimp_canvas action "warp", and no gimp_adjust action "liquify". Calling those names fails before GIMP is asked to edit:
+  unknown recipe 'warp'
+  unknown canvas action 'warp'
+  unknown adjustment 'liquify'
+
+If GIMP is running and the user only wants to know what is installed, you may call gimp_filter_search(query="warp") and gimp_pdb_search(query="liquify"), then gimp_filter_describe or gimp_pdb_describe on a name that search actually returned. Stop there unless they explicitly ask to experiment.
+
+Expected output
+---------------
+A short refusal: warp and liquify are unsupported, and this repository has no before/after measurement of either. No layer pixels change. A validated result would name one installed operation and show a gimp_snapshot compared with gimp_render_compare or gimp_measure. That proof is not available, so the status stays unsupported.

@@ -1,0 +1,14 @@
+Pack these equal-sized PNG frames into a sprite sheet and keep the pixels checkable.
+
+Use gimp_run_recipe with name "sprite_sheet_pack" and params:
+  input_paths: the PNG paths, animation order, equal canvas size, unique basenames
+  output_path: a .png path that does not already exist
+  columns: 4
+  margin: 1
+  spacing: 2
+
+Do not pass padding, trim, max_width or input_layer_ids to sprite_sheet_pack. Those belong to sprite_atlas_pack.
+
+Expected output
+---------------
+The recipe returns output_path, atlas_path and xcf_path. Beside the PNG it writes the same stem as .json and .xcf. verification is "exact RGBA match". size.w and size.h follow 2 * margin + columns_used * frame + gaps * spacing on each axis. For 64 by 64 frames, six images, columns 4, margin 1 and spacing 2, that is 264 by 132. Margins and the gap between cells are transparent. If a frame has a different canvas size, the recipe errors and tells you to use an atlas workflow. It does not rescale.
