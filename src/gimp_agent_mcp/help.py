@@ -19,7 +19,8 @@ HOW TO WORK WITH GIMP THROUGH THIS SERVER
 4. Edit, then MEASURE: gimp_measure(kind="bbox"|"color"|"histogram"|"dominant") answers questions a render cannot.
 5. Before a risky edit, gimp_snapshot(image_id); afterwards gimp_render_compare(image_id, snapshot_id) shows
    before | after | diff.
-6. Prefer a recipe when one exists (gimp_list_recipes): stickers, icon sets, web optimisation, watermark,
+6. Heavy work belongs in a recipe or one gimp_run_python call: they report progress and gimp_cancel stops them.
+   Prefer a recipe when one exists (gimp_list_recipes): stickers, icon sets, web optimisation, watermark,
    contact sheet, sprite slicing, compose-from-manifest. gimp_batch_recipe runs one over a folder.
 7. Common edits: gimp_adjust, gimp_canvas and gimp_draw choose and describe the installed runtime operation.
    Filters: gimp_filter_search -> gimp_filter_describe -> gimp_apply_filter. Anything else: gimp_pdb_search ->
@@ -210,7 +211,12 @@ READING ERRORS
 "no open image with id N"                      -> ids change when images close; call gimp_list_images
 "GIMP Agent Bridge is not reachable"           -> gimp_launch, or Filters > Development > Start Agent Bridge in GIMP
 "segmentation is not installed"                -> uv sync --extra segmentation in the server directory
-Long operations: pass a bigger timeout by splitting work, or use recipes which run inside GIMP in one call.
+"OperationCancelled: ... cancelled at a checkpoint" -> gimp_cancel stopped it; work before the checkpoint is kept
+Long operations: recipes, gimp_batch_recipe, gimp_edit_batch and gimp_run_python report MCP progress and stop
+  at their next checkpoint when gimp_cancel is called (from any client, even while the call runs). Heavy work on
+  a large image belongs in a recipe or one gimp_run_python call with checkpoint(fraction, text) between passes,
+  not many separate tool calls. A single filter merge cannot be interrupted once it starts. Do not retry a slow
+  call that is still reporting progress; call gimp_cancel first if you want it to stop.
 """
 
 
