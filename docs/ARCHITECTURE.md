@@ -28,7 +28,7 @@ Response:
 {"id": "hex", "ok": false, "error": {"type": "BridgeError", "message": "...", "traceback": "..."}}
 ```
 
-Ops: `context`, `edit_batch`, `ping`, `shutdown`, `exec`, `list_images`, `image_info`, `new_image`, `open`, `export`, `export_with`, `close_image`, `render`, `layer_png`, `snapshot`, `drop_snapshot`, `render_compare`, `pixel_color`, `alpha_bbox`, `histogram`, `dominant_colors`, `pdb_search`, `pdb_describe`, `pdb_call`, `filter_search`, `filter_describe`, `apply_filter`, `list_filters_on_layer`, `layer_effect`, `select`, `layer_mask`, `set_mask_pixels`, `layer`, `list_fonts`, `text`, `path`.
+Ops: `context`, `edit_batch`, `ping`, `shutdown`, `exec`, `list_images`, `image_info`, `new_image`, `open`, `export`, `export_with`, `close_image`, `render`, `layer_png`, `snapshot`, `drop_snapshot`, `render_compare`, `pixel_color`, `alpha_bbox`, `histogram`, `dominant_colors`, `pdb_search`, `pdb_describe`, `pdb_call`, `filter_search`, `filter_describe`, `apply_filter`, `list_filters_on_layer`, `layer_effect`, `select`, `layer_mask`, `set_mask_pixels`, `layer`, `list_fonts`, `text`, `path`, `cancel`, `jobs`.
 
 `ping` and `list_images` resolve the active image through GIMP's user context and its active display. Both return `active_image_id`, `active_layer_ids`, selection bounds and `active_image_dirty`; `list_images` wraps its image summaries in an `images` field so this context can accompany the list without guessing from image order. With no active display, the image id and dirty state are `null`, layer ids are empty, and selection is `null`.
 
@@ -97,6 +97,26 @@ Snapshots are private comparison images: excluded from document lists, limited t
 For POSIX launches, the GIMP executable's directory precedes uv's virtualenv on PATH; PYTHONHOME/PYTHONPATH/VIRTUAL_ENV are removed from the child environment. GIMP's own plug-ins can therefore use the Python GI runtime that belongs to its installation. Windows uses the packaged GIMP runtime unchanged. Headless launches also use --new-instance.
 
 The server-side BridgeClient uses a reentrant lock to serialize parallel MCP calls over its single socket, including reconnects. This does not introduce any threads in the GIMP plug-in. A zero-byte send closes a dead peer rather than spinning forever.
+
+## Cancellation and progress
+
+The plug-in still has one thread and runs one operation at a time. Long paths call `checkpoint(fraction, text)` between steps: recipe items, `edit_batch` steps, the start of `apply_filter`, and any `exec` code that calls the `checkpoint` helper injected into its namespace. `JobTracker` and `split_control_requests` in `agent_bridge_core.py` do the bookkeeping, so they are unit-tested without GIMP.
+
+A checkpoint does three things without running the GLib loop re-entrantly. It sends a progress line to the requesting client if that request carried `"progress": true`:
+
+```json
+{"id": "hex", "progress": {"fraction": 0.25, "text": "item 3 of 12", "elapsed_seconds": 4.1}}
+```
+
+It then accepts any pending connections, reads whatever bytes are waiting on every client socket, and answers `cancel` and `jobs` requests found there immediately. Other complete requests stay in their connection buffer in order and run after the current operation; an idle callback drains those buffers, because GLib will not report bytes that a checkpoint has already read. Finally, if a cancel matched the running operation (optionally by `image_id`), it raises `OperationCancelled`, which the bridge returns as an error of that type with no traceback.
+
+Clients that do not ask for progress never receive interim lines, so the one-reply-per-request contract is unchanged for them. The server's `BridgeClient.call(..., on_progress=...)` consumes interim lines and forwards them as MCP progress notifications (0..100, never decreasing) through `anyio.from_thread`, since sync tools run in a worker thread. The socket timeout applies to each wait, so a call that keeps reporting is not cut off.
+
+`gimp_cancel` opens its own short connection because the shared client is held by the call it is cancelling. A cancel that arrives when nothing runs is answered as a no-op; because requests outside a checkpoint are only processed between operations, a late cancel can never stop a later operation. `gimp_batch_recipe` loops in the server, so `gimp_cancel` also sets a server-side flag it checks between files.
+
+Consistency on cancel: `exec` closes its undo group as before and deletes images created during the call that were never displayed, so a cancelled recipe leaves no half-built documents. `edit_batch` records the cancel as the failing step (`cancelled: true`), keeps the completed steps and closes its undo group, matching its existing partial-failure contract. `apply_filter` only checks before the filter is created, so a cancel never interrupts a merge half way.
+
+Not covered: a single `merge_filter` or PDB call runs to completion once started. libgimp's progress hooks (`gimp_progress_install_vtable`) take a C callback table that has not been verified from PyGObject, so GIMP's own per-procedure progress is not forwarded; only bridge checkpoints report.
 
 ## Brand kits
 

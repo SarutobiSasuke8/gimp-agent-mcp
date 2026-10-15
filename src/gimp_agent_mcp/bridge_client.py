@@ -9,6 +9,7 @@ import sys
 import threading
 import time
 import uuid
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -113,25 +114,57 @@ class BridgeClient:
 
     # -- calls ------------------------------------------------------------------------
 
-    def call(self, op: str, params: dict[str, Any] | None = None, timeout: float | None = None) -> Any:
-        with self._lock:
-            return self._call_locked(op, params, timeout)
+    def call(
+        self,
+        op: str,
+        params: dict[str, Any] | None = None,
+        timeout: float | None = None,
+        on_progress: Callable[[dict[str, Any]], None] | None = None,
+    ) -> Any:
+        """Send one request and wait for its reply.
 
-    def _call_locked(self, op: str, params: dict[str, Any] | None = None, timeout: float | None = None) -> Any:
+        With ``on_progress`` the request asks the bridge for interim progress lines, which are passed to the
+        callback as they arrive. ``timeout`` applies to each wait, so a long operation that keeps reporting
+        progress is not cut off by it.
+        """
+        with self._lock:
+            if on_progress is None:
+                return self._call_locked(op, params, timeout)
+            return self._call_locked(op, params, timeout, on_progress)
+
+    def _call_locked(
+        self,
+        op: str,
+        params: dict[str, Any] | None = None,
+        timeout: float | None = None,
+        on_progress: Callable[[dict[str, Any]], None] | None = None,
+    ) -> Any:
         self.connect()
         assert self._sock and self._rfile and self._wfile
         req_id = uuid.uuid4().hex
-        payload = core.encode_message({"id": req_id, "token": self._token, "op": op, "params": params or {}})
+        message: dict[str, Any] = {"id": req_id, "token": self._token, "op": op, "params": params or {}}
+        if on_progress is not None:
+            message["progress"] = True
+        payload = core.encode_message(message)
         try:
             self._sock.settimeout(self.timeout if timeout is None else timeout)
             self._wfile.write(payload)
             self._wfile.flush()
-            line = self._rfile.readline()
-            if not line:
-                raise ConnectionError("bridge closed the connection")
-            response = core.decode_message(line)
-            if response.get("id") != req_id:
-                raise ValueError("bridge response id does not match request")
+            while True:
+                line = self._rfile.readline()
+                if not line:
+                    raise ConnectionError("bridge closed the connection")
+                response = core.decode_message(line)
+                if response.get("id") != req_id:
+                    raise ValueError("bridge response id does not match request")
+                if "progress" in response and "ok" not in response:
+                    if on_progress is not None:
+                        try:
+                            on_progress(response["progress"])
+                        except Exception:  # noqa: BLE001 - a reporting failure must not lose the reply
+                            pass
+                    continue
+                break
         except (OSError, ConnectionError, ValueError) as exc:
             self.close()
             raise BridgeUnavailable(

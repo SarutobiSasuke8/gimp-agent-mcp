@@ -297,3 +297,131 @@ def resolve_edit_refs(value, results):
     if isinstance(value, list):
         return [resolve_edit_refs(v, results) for v in value]
     return value
+
+
+# --------------------------------------------------------------------------- cancellation and progress
+
+# Ops a running operation answers between its own steps. Every other request waits its turn.
+CONTROL_OPS = frozenset({"cancel", "jobs"})
+PROGRESS_INTERVAL = 0.25
+
+
+class OperationCancelled(Exception):
+    """Raised at a checkpoint after gimp_cancel asked the running operation to stop."""
+
+
+class Job:
+    """The one operation the bridge is running. Long paths call ``checkpoint`` between steps."""
+
+    def __init__(self, tracker, request_id, op, image_id=None, send_progress=None):
+        self.tracker = tracker
+        self.request_id = request_id
+        self.op = op
+        self.image_id = image_id
+        self.send_progress = send_progress
+        self.started = tracker.clock()
+        self.fraction = None
+        self.text = ""
+        self.cancel_requested = False
+        self.checkpoints = 0
+        self._last_sent = None
+
+    def summary(self):
+        return {
+            "request_id": self.request_id,
+            "op": self.op,
+            "image_id": self.image_id,
+            "elapsed_seconds": round(self.tracker.clock() - self.started, 3),
+            "fraction": self.fraction,
+            "text": self.text,
+            "cancel_requested": self.cancel_requested,
+        }
+
+    def checkpoint(self, fraction=None, text=None, cancellable=True):
+        """Record progress, answer pending control requests and stop here if a cancel arrived."""
+        self.checkpoints += 1
+        if fraction is not None:
+            fraction = float(fraction)
+            self.fraction = max(0.0, min(1.0, fraction)) if math.isfinite(fraction) else None
+        if text is not None:
+            self.text = str(text)[:200]
+        now = self.tracker.clock()
+        if self.send_progress is not None and (
+            self._last_sent is None or now - self._last_sent >= PROGRESS_INTERVAL or self.fraction == 1.0
+        ):
+            self._last_sent = now
+            try:
+                self.send_progress({"fraction": self.fraction, "text": self.text,
+                                    "elapsed_seconds": round(now - self.started, 3)})
+            except OSError:
+                self.send_progress = None  # the client went away; keep working, the final send will fail cleanly
+        if self.tracker.poll is not None:
+            self.tracker.poll()
+        if cancellable and self.cancel_requested:
+            raise OperationCancelled(
+                f"{self.op} was cancelled at a checkpoint"
+                + (f" ({self.text})" if self.text else "")
+                + "; work done before the checkpoint is kept, see the operation's recovery notes"
+            )
+
+
+class JobTracker:
+    """Tracks the running operation. The plug-in has no threads, so there is at most one."""
+
+    def __init__(self, poll=None, clock=time.monotonic):
+        self.poll = poll
+        self.clock = clock
+        self.current = None
+
+    def start(self, request_id, op, image_id=None, send_progress=None):
+        job = Job(self, request_id, op, image_id=image_id, send_progress=send_progress)
+        self.current = job
+        return job
+
+    def finish(self, job):
+        if self.current is job:
+            self.current = None
+
+    def checkpoint(self, fraction=None, text=None, cancellable=True):
+        """Checkpoint the running job; a no-op outside one, so recipes can call it unconditionally."""
+        if self.current is not None:
+            self.current.checkpoint(fraction, text, cancellable)
+
+    def cancel(self, image_id=None, request_id=None):
+        job = self.current
+        if job is None:
+            return {"cancel_requested": False, "reason": "no operation is running", "running": None}
+        if request_id is not None and request_id != job.request_id:
+            return {"cancel_requested": False, "reason": "the running operation has another request id", "running": job.summary()}
+        if image_id is not None and job.image_id is not None and int(image_id) != int(job.image_id):
+            return {"cancel_requested": False, "reason": f"the running operation targets image {job.image_id}", "running": job.summary()}
+        job.cancel_requested = True
+        return {"cancel_requested": True, "running": job.summary(),
+                "note": "the operation stops at its next checkpoint; a single GEGL merge in progress cannot be interrupted"}
+
+    def status(self):
+        return {"running": self.current.summary() if self.current is not None else None}
+
+
+def split_control_requests(buffer, token):
+    """Pull authorised control requests (cancel, jobs) out of a connection's receive buffer.
+
+    Returns ``(remaining, controls)``. Complete lines that are not control requests, and any trailing partial
+    line, stay in ``remaining`` in their original order, so ordinary requests run after the current operation
+    exactly as if they had never been looked at. Malformed lines and bad tokens are left for the normal handler
+    to reject.
+    """
+    controls = []
+    kept = []
+    *lines, tail = buffer.split(b"\n")
+    for line in lines:
+        if line.strip():
+            try:
+                message = decode_message(line)
+            except (ValueError, UnicodeDecodeError):
+                message = None
+            if message is not None and message.get("op") in CONTROL_OPS and message.get("token") == token:
+                controls.append(message)
+                continue
+        kept.append(line + b"\n")
+    return b"".join(kept) + tail, controls

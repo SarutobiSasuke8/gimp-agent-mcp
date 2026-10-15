@@ -13,6 +13,7 @@ PARAMS = {
 
 SOURCE = r'''
 import os
+checkpoint_ = globals().get("checkpoint") or (lambda *a, **k: None)
 
 src = os.path.abspath(os.path.expanduser(params["input_path"]))
 out_dir = os.path.abspath(os.path.expanduser(params["output_dir"]))
@@ -42,6 +43,7 @@ try:
         base.insert_layer(bg, None, len(base.get_layers()))
         base.merge_visible_layers(Gimp.MergeType.CLIP_TO_IMAGE)
     for size in sorted({int(s) for s in params["sizes"]}, reverse=True):
+        checkpoint_(len(files) / max(1, len(params["sizes"])), f"exporting {size}px")
         dup = base.duplicate()
         try:
             dup.scale(size, size)
