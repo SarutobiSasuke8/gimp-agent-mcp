@@ -6,6 +6,7 @@ PARAMS = {
     "output_path": {"type": "string", "required": True, "description": "Destination image; extension picks the format"},
     "manifest": {"type": "object", "default": None, "description": "Layout manifest (see gimp_help('compose')); or use manifest_path"},
     "manifest_path": {"type": "string", "default": "", "description": "Path to a JSON manifest file instead of inline manifest"},
+    "brand": {"type": "string", "default": "", "description": "Brand profile (gimp_brand) whose @tokens and canvases the manifest may use; a manifest 'brand' key wins"},
     "export_options": {"type": "object", "default": {}, "description": "Options for the export procedure, e.g. {\"quality\": 85}"},
     "keep_open": {"type": "boolean", "default": False, "description": "Leave the layered image open in GIMP for hand edits"},
 }

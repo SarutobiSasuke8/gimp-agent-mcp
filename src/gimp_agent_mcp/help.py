@@ -200,6 +200,20 @@ color, radius, opacity), ellipse (x, y, width, height, color, opacity). Any item
 {"op": "gegl:...", "params": {...}, "mode": "merge"|"append"}, and "name".
 "anchor": "center" on text or image centres it on x, y. Returns each item's final bounding box so you can check
 alignment with gimp_measure or adjust and re-run. "keep_open": true leaves the layered image in GIMP for hand edits.
+
+BRAND TOKENS
+Store a brand once with gimp_brand(action="set", profile={"name": "example",
+  "colors": {"bg": "#0f1117", "accent": "#1f3a8a", "text": "#ffffff"},
+  "fonts": {"headline": "Bahnschrift Bold"}, "assets": {"logo": "/brand/logo.png"},
+  "canvases": {"x-card": [1200, 675], "og": [1200, 630]}}). Font names are checked against GIMP when saved.
+Then a manifest says {"brand": "example", "canvas": "x-card", "background": "@bg", "items": [
+  {"type": "image", "path": "@logo", ...}, {"type": "text", "font": "@headline", "color": "@text", ...}]}
+(or pass "brand" as a recipe parameter). "@key" resolves against the profile's colors, fonts and assets, which
+share one key space; "canvas" sets width and height. Literals always win: a plain "#hex" or font name is used
+as written, explicit width/height beat canvas, and a manifest "tokens": {"text": "#ff0000"} overrides profile keys
+for that manifest. "text" and "name" fields are never tokens, so "@handle" in a caption stays literal; "@@x"
+gives a literal "@x" elsewhere. An unknown token fails before GIMP runs, naming the profile and its keys.
+gimp_brand(action="list"|"get"|"delete") manages stored profiles.
 """
 
 TOPICS["errors"] = """\

@@ -105,7 +105,7 @@ Other GIMP MCP projects also provide TCP bridges and visual feedback. This proje
 | Everyday edits | `gimp_adjust`, `gimp_canvas`, `gimp_draw` |
 | Structured edit | `gimp_edit_batch`, `gimp_select`, `gimp_layer_mask`, `gimp_layer`, `gimp_text`, `gimp_list_fonts`, `gimp_path` |
 | Cut out | `gimp_remove_background` (optional rembg model runtime) |
-| Automate | `gimp_run_python`, `gimp_list_recipes`, `gimp_run_recipe`, `gimp_batch_recipe`, `gimp_cancel` |
+| Automate | `gimp_run_python`, `gimp_list_recipes`, `gimp_run_recipe`, `gimp_batch_recipe`, `gimp_brand`, `gimp_cancel` |
 
 Images and items use integer IDs. Colours accept hex, common names, CSS RGB strings or component arrays; enums use nicks returned by the describe tools. Call `gimp_help("batch")` for grouped-edit examples. `gimp_run_python` may be disabled, reducing the tool count by one.
 
@@ -132,6 +132,24 @@ gimp_render(image_id=3, overlay=["grid", "layers", "selection"], grid_size=100,
 | `watermark` | Position a text or image watermark. |
 | `contact_sheet` | Labelled thumbnails from a folder. |
 | `fit_and_export` | Fit to a maximum edge and export by extension. |
+
+### Brand kits for compose
+
+Store a brand's colours, fonts, assets and canvas sizes once, then refer to them by token. Profiles are JSON files in the per-user config directory (`%APPDATA%\gimp-agent-mcp\brands` on Windows, `~/Library/Application Support/gimp-agent-mcp/brands` on macOS, `$XDG_CONFIG_HOME/gimp-agent-mcp/brands` elsewhere; `GIMP_AGENT_BRANDS_DIR` overrides). Font names are checked against the running GIMP when a profile is saved.
+
+```text
+gimp_brand(action="set", profile={"name": "example",
+  "colors": {"bg": "#0f1117", "accent": "#1f3a8a", "text": "#ffffff"},
+  "fonts": {"headline": "Bahnschrift Bold"}, "assets": {"logo": "/brand/logo.png"},
+  "canvases": {"x-card": [1200, 675], "og": [1200, 630]}})
+
+gimp_run_recipe("compose", {"output_path": "out/card.png", "manifest": {
+  "brand": "example", "canvas": "x-card", "background": "@bg",
+  "items": [{"type": "image", "path": "@logo", "x": 40, "y": 40, "width": 160},
+            {"type": "text", "text": "Launch day", "font": "@headline", "size": 72, "color": "@text", "x": 40, "y": 240}]}})
+```
+
+Tokens are resolved in the server before anything reaches GIMP, so a token manifest becomes exactly the manifest you would have written by hand. Literal values still work and win over the profile; an unknown token fails with the profile name and its available keys. `gimp_help("compose")` has the full rules.
 
 [Recipe arguments and examples](docs/RECIPES.md) · [Asset workflows](docs/ASSET_WORKFLOWS.md) · [Skills](docs/SKILLS.md)
 
