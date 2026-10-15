@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import glob
 import os
+import re
 from pathlib import Path
 from typing import Any
 
@@ -15,7 +16,7 @@ try:  # mcp >= 2 reports ToolError as a clean tool failure instead of a server t
 except ImportError:  # pragma: no cover
     ToolError = RuntimeError  # type: ignore[misc,assignment]
 
-from . import recipes
+from . import brands, recipes
 from .bridge_client import BridgeClient, BridgeError, BridgeUnavailable, launch_gimp
 
 ALLOW_PYTHON = os.environ.get("GIMP_AGENT_ALLOW_PYTHON", "1").strip().lower() not in ("0", "false", "no", "off")
@@ -707,11 +708,71 @@ def gimp_run_recipe(name: str, params: dict[str, Any] | None = None) -> dict[str
     try:
         module = recipes.get_recipe(name)
         resolved = recipes.resolve_params(name, params)
+        if name == "compose":
+            resolved = brands.prepare_compose_params(resolved)
     except (KeyError, ValueError) as exc:
         raise ToolError(str(exc)) from exc
     code = "params = " + repr(resolved) + "\n" + module.SOURCE
     out = _call("exec", {"code": code}, timeout=600.0)
     return {"recipe": name, "params": resolved, "result": out.get("result"), "stdout": out.get("stdout", "")}
+
+
+def _missing_fonts(fonts: dict[str, str]) -> dict[str, str]:
+    """Fonts in a profile that the running GIMP does not have, by exact name."""
+    missing = {}
+    for key, font in fonts.items():
+        found = _call("list_fonts", {"filter": "^" + re.escape(font) + "$", "limit": 50})
+        if font not in (found or {}).get("fonts", []):
+            missing[key] = font
+    return missing
+
+
+@mcp.tool()
+def gimp_brand(
+    action: str = "list",
+    name: str | None = None,
+    profile: dict[str, Any] | None = None,
+    check_fonts: bool = True,
+) -> dict[str, Any]:
+    """Brand kits for compose. action='list' (stored profiles), 'get' (name), 'set' (profile={name, colors, fonts, assets, canvases}; fonts are checked against the running GIMP unless check_fonts=False), 'delete' (name). A compose manifest then uses {"brand": name, "canvas": "x-card", "background": "@bg"} and items like {"font": "@headline", "color": "@text"}. See gimp_help("compose")."""
+    action = action.strip().lower()
+    try:
+        if action == "list":
+            return {"directory": str(brands.brands_dir()), "profiles": brands.list_profiles()}
+        if action == "get":
+            if not name:
+                raise ToolError("get needs name")
+            return {"profile": brands.load_profile(name), "path": str(brands.profile_path(name))}
+        if action == "set":
+            if not isinstance(profile, dict):
+                raise ToolError("set needs profile={name, colors, fonts, assets, canvases}")
+            if name and profile.get("name") not in (None, name):
+                raise ToolError(f"name {name!r} does not match profile name {profile.get('name')!r}")
+            clean = brands.validate_profile({**profile, "name": profile.get("name") or name})
+            fonts_checked = False
+            if check_fonts and clean.get("fonts"):
+                try:
+                    missing = _missing_fonts(clean["fonts"])
+                except ToolError as exc:
+                    raise ToolError(
+                        f"cannot check fonts because GIMP is not reachable ({exc}). "
+                        "Launch GIMP, or pass check_fonts=False to save without the check."
+                    ) from exc
+                if missing:
+                    raise ToolError(
+                        f"brand profile {clean['name']!r} names font(s) GIMP does not have: {missing}. "
+                        "Use exact names from gimp_list_fonts, or pass check_fonts=False."
+                    )
+                fonts_checked = True
+            path = brands.save_profile(clean)
+            return {"saved": True, "path": str(path), "profile": clean, "fonts_checked": fonts_checked}
+        if action == "delete":
+            if not name:
+                raise ToolError("delete needs name")
+            return {"deleted": True, "path": str(brands.delete_profile(name))}
+    except brands.BrandError as exc:
+        raise ToolError(str(exc)) from exc
+    raise ToolError("action must be list, get, set or delete")
 
 
 @mcp.tool()
