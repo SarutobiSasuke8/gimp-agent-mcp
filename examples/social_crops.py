@@ -1,9 +1,12 @@
 """Social crops at common sizes, using gimp_canvas crop arguments.
 
-There is no social-profile recipe and no focus flag. This script builds the
-real ``gimp_canvas`` arguments: action ``crop``, plus integer ``width``,
-``height``, ``x`` and ``y``. Those become the PDB procedure ``gimp-image-crop``
-(``new-width``, ``new-height``, ``offx``, ``offy``).
+The ``social_crop`` recipe does this end to end (named profiles, focus point,
+optional scaling, measured output). This script shows the hand route: it
+builds real ``gimp_canvas`` arguments, action ``crop`` plus integer ``width``,
+``height``, ``x`` and ``y``, using the recipe's own planner with
+``fit="crop"``. Those become the PDB procedure ``gimp-image-crop``
+(``new-width``, ``new-height``, ``offx``, ``offy``). It also resolves the
+equivalent ``social_crop`` recipe call.
 
 Run from a checkout (no GIMP required):
 
@@ -39,7 +42,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
+from gimp_agent_mcp import recipes  # noqa: E402
 from gimp_agent_mcp.server import gimp_canvas  # noqa: E402
+
+plan_crop = recipes.get_recipe("social_crop").plan_crop
 
 # Conventional export sizes. Names are labels in this example, not tool arguments.
 COMMON_SIZES = (
@@ -59,15 +65,11 @@ FOCUS_Y = 420
 
 def crop_origin(src_w: int, src_h: int, width: int, height: int, focus_x: int, focus_y: int) -> tuple[int, int]:
     """Top-left for gimp_canvas crop so the focus pixel stays inside the source."""
-    if width < 1 or height < 1:
-        raise ValueError("width and height must be positive")
-    if width > src_w or height > src_h:
-        raise ValueError(f"crop {width}x{height} does not fit {src_w}x{src_h}; gimp_canvas crop does not scale")
-    if not (0 <= focus_x < src_w and 0 <= focus_y < src_h):
-        raise ValueError("focus point is outside the source image")
-    x = min(max(focus_x - width // 2, 0), src_w - width)
-    y = min(max(focus_y - height // 2, 0), src_h - height)
-    return x, y
+    plan = plan_crop(src_w, src_h, width, height, focus_x, focus_y, fit="crop")
+    # At scale 1 the planner matches the documented hand formula exactly.
+    assert (plan["x"], plan["y"]) == (min(max(focus_x - width // 2, 0), src_w - width),
+                                      min(max(focus_y - height // 2, 0), src_h - height))
+    return plan["x"], plan["y"]
 
 
 def focus_inside(x: int, y: int, width: int, height: int, focus_x: int, focus_y: int) -> bool:
@@ -133,6 +135,9 @@ def main() -> int:
         "crops": crops,
         "refused": refused,
         "corner_focus_open_graph": {"focus": {"x": 10, "y": 10}, "x": corner_x, "y": corner_y},
+        "recipe_call": {"tool": "gimp_run_recipe", "name": "social_crop", "params": recipes.resolve_params("social_crop", {
+            "input_path": "photo.png", "output_dir": "out/social", "profiles": [c["name"] for c in crops],
+            "focus": {"x": FOCUS_X, "y": FOCUS_Y}, "fit": "crop"})},
         "after_gimp_accepts": (
             "gimp_image_info width and height match the requested crop. "
             "gimp_measure(kind='color', x=focus_after_crop.x, y=focus_after_crop.y) "

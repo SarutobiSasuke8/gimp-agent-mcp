@@ -1,6 +1,6 @@
 # Asset workflows
 
-Sprite inputs, social crops and warp, using only calls that exist today. Nothing on this page adds a tool, a recipe parameter or a CLI flag.
+Sprite inputs, social crops and warp, using calls that exist today: the `sprite_sheet_pack`, `sprite_atlas_pack` and `social_crop` recipes, plus `gimp_canvas` for a single hand-placed crop.
 
 Runnable checks that do not need GIMP:
 
@@ -30,25 +30,20 @@ Two recipes. Parameter lists come from `gimp_list_recipes` or [RECIPES.md](RECIP
 - `input_paths`: PNG files, canvases may differ, keys are basenames.
 - `input_layer_ids`: integer ids of open raster layers, keys are layer names. Group layers are refused. The source documents are read and not modified or closed.
 
-`padding` (default 2) is the transparent gap between sprites and around the edge. `trim` packs measured alpha bounds instead of the full canvas. `max_width` (default 2048) caps width. `power_of_two` rounds the atlas up and requires a power-of-two `max_width`. Placement is `pack_rects` (MaxRects, bottom-left, no rotation), which `examples/sprite_inputs.py` calls directly. Passing both inputs, or neither, is rejected when the recipe runs inside GIMP (`give exactly one of input_paths or input_layer_ids`). `resolve_params` only checks types.
+`padding` (default 2) is the transparent gap between sprites and around the edge. `trim` packs measured alpha bounds instead of the full canvas. `max_width` (default 2048) caps width. `power_of_two` rounds the atlas up and requires a power-of-two `max_width`. Placement is `pack_rects` (MaxRects, bottom-left, no rotation), which `examples/sprite_inputs.py` calls directly. Passing both inputs, or neither, is rejected by `resolve_params` before GIMP is asked (`needs exactly one of input_paths or input_layer_ids`), and again by the recipe body inside GIMP.
 
 [`examples/sprite_inputs.py`](../examples/sprite_inputs.py) resolves both call shapes and places seven full canvases at padding 2. Expected sheet for six 64px frames, four columns, margin 1 and spacing 2: **264 by 132**. It does not write image files.
 
 ## Social crops
 
-There is no named social profile and no focus parameter. A crop is `gimp_canvas`:
+`social_crop` exports one source to named profiles around a focus point and measures every file it writes:
 
 ```text
-gimp_canvas(image_id, action="crop", width=1200, height=630, x=1080, y=105)
+gimp_run_recipe("social_crop", {"input_path": "photo.jpg", "output_dir": "out/social",
+  "profiles": ["open_graph", "instagram_portrait", "youtube_thumbnail"], "focus": {"x": 1680, "y": 420}})
 ```
 
-`width` and `height` are required and must be positive. `x` and `y` default to 0. They are the PDB `offx` and `offy` of `gimp-image-crop`: the top-left of the rectangle that remains. The call returns `editable: false` and the installed procedure description. After GIMP accepts it, `image.width` and `image.height` are the requested size.
-
-Crop does not scale. If the target is wider or taller than the source, do not emit the call. `gimp_canvas` `scale` is a different action and does not take a focus point.
-
-Common sizes used by [`examples/social_crops.py`](../examples/social_crops.py) (labels, not server presets):
-
-| Label | Pixels | Usual use |
+| Profile | Pixels | Usual use |
 |---|---|---|
 | open_graph | 1200 × 630 | Open Graph / link preview |
 | x_landscape | 1600 × 900 | X landscape post |
@@ -57,16 +52,32 @@ Common sizes used by [`examples/social_crops.py`](../examples/social_crops.py) (
 | story_reel | 1080 × 1920 | Story, reel or vertical short |
 | youtube_thumbnail | 1280 × 720 | YouTube thumbnail |
 
-To keep a focus pixel `(fx, fy)` inside the crop, centre with integer division and clamp to the source:
+`profiles` takes these names, `["all"]`, or custom `{"name": "banner", "width": 1500, "height": 500}` objects. Use `image_id` instead of `input_path` to export from an open document; it is duplicated and never changed.
+
+- `fit="cover"` (default) scales the source by the smallest factor that covers the profile, then crops around the focus. A profile that would need the source enlarged is refused unless `allow_upscale=true`.
+- `fit="crop"` never scales and refuses profiles larger than the source, like `gimp_canvas` crop.
+- `focus` is `{x, y}` in source pixels (default: the centre). The crop is centred on the focus and clamped to the image, so the focus pixel is always inside the output; `focus_after` reports where it landed.
+- Every profile is planned before anything is written, so one refused profile leaves no partial output.
+- Each file is reopened: `measured` must equal the profile size, and PNG output must match the cropped image pixel for pixel (`pixel_check`). JPEG and WebP report the size only, because they are lossy.
+
+At scale 1 the origin is the same as the hand formula below, so `fit="crop"` on a 2400 × 1800 image with focus `(1680, 420)` puts the Open Graph crop at `x=1080`, `y=105`, focus `(600, 315)`.
+
+### One crop by hand
+
+A single crop is `gimp_canvas`:
+
+```text
+gimp_canvas(image_id, action="crop", width=1200, height=630, x=1080, y=105)
+```
+
+`width` and `height` are required and must be positive. `x` and `y` default to 0. They are the PDB `offx` and `offy` of `gimp-image-crop`: the top-left of the rectangle that remains. Crop does not scale. To keep a focus pixel `(fx, fy)` inside the crop, centre with integer division and clamp to the source:
 
 ```text
 x = min(max(fx - width // 2, 0), source_width - width)
 y = min(max(fy - height // 2, 0), source_height - height)
 ```
 
-On a 2400 × 1800 image with focus `(1680, 420)`, the Open Graph crop is `x=1080`, `y=105`. The focus is then at `(600, 315)` on the cropped image, which `gimp_measure(kind="color", x=600, y=315)` can read. A focus at `(10, 10)` clamps that same crop to `(0, 0)` and stays in frame. `story_reel` is refused for this source because 1920 is taller than 1800.
-
-Export with `gimp_export`. The path extension selects the format. JPEG accepts `options={"quality": 0.85}` (0 to 1). Unknown option names return the valid list.
+[`examples/social_crops.py`](../examples/social_crops.py) computes these calls with the recipe's own planner and checks the focus stays in frame. Export with `gimp_export`; JPEG accepts `options={"quality": 0.85}` (0 to 1).
 
 ## Warp
 
@@ -77,4 +88,4 @@ Warp and liquify are **unsupported**. [`examples/validated_warp.py`](../examples
 - `gimp_adjust(layer_id, "liquify")` fails the same way. Liquify is not an adjustment.
 - The CLI commands are `serve`, `install-plugin`, `install-skills`, `doctor`, `launch`, `shortcut` and `smoke`. None of them warps.
 
-Do not claim vector warp or liquify parity. This repository has no before/after measurement of an installed warp operation. If GIMP is running, `gimp_filter_search` and `gimp_pdb_search` can list installed names for `warp` or `liquify`. A search hit is not a supported workflow. A validated result would record `gimp_snapshot`, the operation name that describe actually returned, and `gimp_render_compare` or `gimp_measure`. Until that proof exists, the status stays unsupported.
+Do not claim vector warp or liquify parity. This repository has no before/after measurement of an installed warp operation. What GIMP 3.2.4 exposes, and why `gegl:warp` cannot be applied as a filter, is in the [warp investigation note](WARP_INVESTIGATION.md). If GIMP is running, `gimp_filter_search` and `gimp_pdb_search` can list installed names for `warp` or `liquify`. A search hit is not a supported workflow. A validated result would record `gimp_snapshot`, the operation name that describe actually returned, and `gimp_render_compare` or `gimp_measure`. Until that proof exists, the status stays unsupported.

@@ -21,7 +21,7 @@ HOW TO WORK WITH GIMP THROUGH THIS SERVER
    before | after | diff.
 6. Heavy work belongs in a recipe or one gimp_run_python call: they report progress and gimp_cancel stops them.
    Prefer a recipe when one exists (gimp_list_recipes): stickers, icon sets, web optimisation, watermark,
-   contact sheet, sprite slicing, compose-from-manifest. gimp_batch_recipe runs one over a folder.
+   contact sheet, sprite slicing, social crops, compose-from-manifest. gimp_batch_recipe runs one over a folder.
 7. Common edits: gimp_adjust, gimp_canvas and gimp_draw choose and describe the installed runtime operation.
    Filters: gimp_filter_search -> gimp_filter_describe -> gimp_apply_filter. Anything else: gimp_pdb_search ->
    gimp_pdb_describe -> gimp_pdb_call. gimp_run_python for multi-step logic.
@@ -174,6 +174,9 @@ contact_sheet       input_dir, output_path, columns, thumb, labels
 sprite_sheet_pack   input_paths (ordered PNGs), output_path (.png), columns, margin, spacing; verified PNG + layered XCF + atlas JSON
 sprite_atlas_pack   input_paths (mixed-size PNGs) or input_layer_ids (open layers), output_path (.png), padding, trim, max_width, power_of_two; verified atlas
 sprite_sheet_slice  input_path, output_dir, tile_width, tile_height, margin, spacing
+social_crop         input_path or image_id, output_dir, profiles (open_graph, x_landscape, instagram_square,
+                    instagram_portrait, story_reel, youtube_thumbnail, all, or {name,width,height}), focus {x,y},
+                    fit cover|crop, allow_upscale, format; reopens each file and checks size and pixels
 fit_and_export      input_path, output_path, max_edge
 compose             manifest (dict) or manifest_path, output_path: build a card/banner from components (see compose)
 """

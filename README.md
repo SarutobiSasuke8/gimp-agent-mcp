@@ -88,7 +88,7 @@ Claude Code can also install the server and skills as a plugin; see [skills inst
 | Everyday editing | Three compact tools cover common adjustments, canvas transforms, fills and simple drawing. Every action reports the installed GEGL or PDB operation it used. |
 | One undo step | `gimp_edit_batch` groups supported edits on one image into one Ctrl+Z step. A failed step stops the batch, reports partial results and closes the group. |
 | Runtime discovery | Search and describe the installed PDB procedures and GEGL operations, including parameter names, types and enum values. Numeric-array arguments support curves and brush strokes. |
-| Repeatable jobs | Ten recipes and folder batching, plus three bundled workflow skills. |
+| Repeatable jobs | Eleven recipes and folder batching, plus three bundled workflow skills. |
 | Honest failure handling | A lost connection never silently replays an edit whose outcome is unknown. Reconnect, inspect, then decide whether to retry. |
 
 Other GIMP MCP projects also provide TCP bridges and visual feedback. This project's emphasis is editable output, measurement, grouped edits and reproducible validation. Generic API access is broad, but does not guarantee that every GIMP procedure or GEGL operation works with every argument combination.
@@ -126,6 +126,7 @@ gimp_render(image_id=3, overlay=["grid", "layers", "selection"], grid_size=100,
 | `compose` | Cards and banners from a manifest of images, text, shapes and effects. |
 | `sprite_sheet_pack` | Ordered, equal-sized PNGs → verified grid PNG, layered XCF and atlas JSON, with optional margin and spacing. |
 | `sprite_atlas_pack` | Mixed-size PNGs → padded, optionally trimmed atlas PNG, layered XCF and atlas JSON, verified pixel for pixel. |
+| `social_crop` | Named social profiles (Open Graph, X, Instagram, story, YouTube or custom) around a focus point, with measured, pixel-checked output. |
 | `sprite_sheet_slice` | Fixed-size tiles from a sheet, optionally skipping empty cells. |
 | `web_optimise` | Resize and adjust export quality toward a file-size budget. |
 | `icon_set` | Export a square source at multiple sizes. |
@@ -158,8 +159,8 @@ Tokens are resolved in the server before anything reaches GIMP, so a token manif
 Version **0.5.0**, beta. Tested with Windows GIMP **3.2.4**, Linux GIMP **3.2.2** (Ubuntu 26.04), and macOS 15 GIMP **3.2.4** on Apple Silicon and Intel. Each platform runs the full smoke suite, targeted capability proof and all 23 everyday editing actions against real GIMP. GIMP 2.10 is unsupported; earlier 3.x releases are not part of the current test matrix.
 
 - `gimp_edit_batch` accepts bounded layer, text, selection, path, mask and filter edits. It does not keep a transaction open between separate agent calls or automatically roll back a failed batch. The human uses GIMP's Undo/Redo; there is no invented programmatic undo endpoint.
-- Some GEGL source operations, including linear gradients, are not drawable filters. Use the PDB gradient-fill procedure instead. Vector warp/liquify parity is not claimed.
-- Sprite packing currently takes equal-sized PNG files, without padding or direct open-layer input. It does not align animation or pack mixed-size rectangles.
+- Some GEGL source operations, including linear gradients, are not drawable filters. Use the PDB gradient-fill procedure instead. Vector warp/liquify parity is not claimed; see the [warp investigation note](docs/WARP_INVESTIGATION.md).
+- Sprite packing takes equal-sized frames (`sprite_sheet_pack`, with margin and spacing) or mixed-size PNGs and open layers (`sprite_atlas_pack`, with padding and trimming). Neither aligns animation or rotates sprites.
 - Long work reports progress and can be cancelled with `gimp_cancel` at checkpoints: between recipe items, batch files and edit-batch steps, between passes of `gimp_run_python` code that calls `checkpoint()`, and before a filter starts. A single GEGL merge already running cannot be interrupted, and GIMP's own per-procedure progress is not forwarded yet.
 
 ## Verify your setup

@@ -7,6 +7,8 @@ Each recipe module defines:
 - ``SOURCE``: the Python code executed inside GIMP. It receives ``params`` (dict, defaults
   already applied), ``Gimp``, ``Gegl``, ``Gio``, ``GLib``, ``GObject``, ``image_by_id``,
   ``item_by_id`` and ``make_color`` in its namespace, and must assign ``result``.
+- ``VALIDATE`` (optional): ``VALIDATE(params)`` raises ValueError for parameter combinations that are
+  wrong regardless of GIMP state; the server runs it after defaults and types are resolved.
 """
 
 from __future__ import annotations
@@ -81,4 +83,8 @@ def resolve_params(name: str, given: dict[str, Any] | None) -> dict[str, Any]:
                 raise ValueError(f"recipe {name} parameter {key!r} must be finite")
             if "minimum" in spec and value < spec["minimum"]:
                 raise ValueError(f"recipe {name} parameter {key!r} must be >= {spec['minimum']}")
+    # Optional cross-parameter checks that need no GIMP, so mistakes fail before anything is sent.
+    validate = getattr(module, "VALIDATE", None)
+    if callable(validate):
+        validate(resolved)
     return resolved

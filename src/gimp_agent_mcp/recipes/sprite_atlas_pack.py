@@ -75,6 +75,14 @@ exec(PACKER, _namespace)
 pack_rects = _namespace["pack_rects"]
 next_power_of_two = _namespace["next_power_of_two"]
 
+
+def VALIDATE(params):
+    """Checks that need no GIMP, run by the server before the recipe is sent."""
+    if (params["input_paths"] is None) == (params["input_layer_ids"] is None):
+        raise ValueError("recipe sprite_atlas_pack needs exactly one of input_paths or input_layer_ids")
+    if params["power_of_two"] and next_power_of_two(params["max_width"]) != params["max_width"]:
+        raise ValueError("recipe sprite_atlas_pack: power_of_two requires max_width to be a power of two")
+
 SOURCE = PACKER + r'''
 import os, json, hashlib
 

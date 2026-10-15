@@ -139,6 +139,7 @@ def test_recipe_catalogue():
         "sprite_sheet_slice",
         "sprite_sheet_pack",
         "sprite_atlas_pack",
+        "social_crop",
         "compose",
     }
 
