@@ -29,6 +29,7 @@ Rules:
 - Every parameter has a `description` and either a `default` or `required: True`. The unit tests enforce this.
 - `SOURCE` runs inside GIMP with `params` already resolved. `Gimp`, `Gegl`, `Gio`, `GLib`, `GObject`, `image_by_id`, `item_by_id` and `make_color` are in scope.
 - Assign `result`. It is serialised and returned to the agent.
+- In loops, call `checkpoint(fraction, text)` once per item. It reports progress to the client and is where `gimp_cancel` stops the recipe (images the recipe created are then removed). Resolve it as `checkpoint_ = globals().get("checkpoint") or (lambda *a, **k: None)` so the recipe still runs on an older plug-in.
 - Wrap edits in `image.undo_group_start()` / `undo_group_end()` when the image may stay open.
 - Delete images you created unless a `keep_open` parameter says otherwise.
 - Recipes that take `input_path` and `output_path` work with `gimp_batch_recipe` for free.

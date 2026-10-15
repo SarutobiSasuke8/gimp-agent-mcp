@@ -6,10 +6,12 @@ import base64
 import glob
 import os
 import re
+import threading
 from pathlib import Path
 from typing import Any
 
-from mcp.server.mcpserver import Image, MCPServer
+import anyio.from_thread
+from mcp.server.mcpserver import Context, Image, MCPServer
 
 try:  # mcp >= 2 reports ToolError as a clean tool failure instead of a server traceback
     from mcp.server.mcpserver.exceptions import ToolError
@@ -48,10 +50,36 @@ Working model:
 
 mcp = MCPServer("gimp-agent-mcp", instructions=INSTRUCTIONS)
 _client = BridgeClient()
+# gimp_batch_recipe loops in this process, so gimp_cancel also stops it between files.
+_batch_cancel = threading.Event()
+_batch_active = threading.Event()
 
 
-def _call(op: str, params: dict[str, Any] | None = None, timeout: float | None = None) -> Any:
+def _progress_reporter(ctx: Context | None, start: float = 0.0, span: float = 1.0):
+    """Turn bridge progress lines into MCP progress notifications (0..100) for a sync tool's request.
+
+    Sync tools run in an anyio worker thread, so the async notification is sent through anyio.from_thread.
+    Progress only ever increases, as MCP requires. Returns None when there is no request context."""
+    if ctx is None:
+        return None
+    last = [0.0]
+
+    def report(progress: dict[str, Any]) -> None:
+        fraction = progress.get("fraction")
+        value = last[0] if fraction is None else max(last[0], round(100.0 * (start + span * float(fraction)), 1))
+        last[0] = value
+        try:
+            anyio.from_thread.run(ctx.report_progress, value, 100.0, progress.get("text") or None)
+        except Exception:  # noqa: BLE001 - progress is best effort; the reply still arrives
+            pass
+
+    return report
+
+
+def _call(op: str, params: dict[str, Any] | None = None, timeout: float | None = None, progress=None) -> Any:
     try:
+        if progress is not None:
+            return _client.call(op, params, timeout=timeout, on_progress=progress)
         return _client.call(op, params, timeout=timeout)
     except BridgeUnavailable as exc:
         raise ToolError(str(exc)) from exc
@@ -136,9 +164,9 @@ def gimp_context(image_id: int | None = None, selected_layer_ids: list[int] | No
 
 
 @mcp.tool()
-def gimp_edit_batch(image_id: int, steps: list[dict[str, Any]]) -> dict[str, Any]:
-    """Run 1..100 edits on one image in ONE undo group. steps=[{op:'layer'|'text'|'select'|'path'|'layer_mask'|'apply_filter', params:{...}}]. Params use the corresponding tool arguments; image_id is injected. Reference an earlier result with {'$ref':'0.id'}. Check complete/error: failure stops later steps, preserves partial work, and always closes the undo group. One Ctrl+Z in GIMP reverts it; this is not automatic rollback or programmatic undo. No edits by another bridge request interleave within the batch."""
-    return _call("edit_batch", {"image_id": image_id, "steps": steps})
+def gimp_edit_batch(image_id: int, steps: list[dict[str, Any]], ctx: Context | None = None) -> dict[str, Any]:
+    """Run 1..100 edits on one image in ONE undo group. steps=[{op:'layer'|'text'|'select'|'path'|'layer_mask'|'apply_filter', params:{...}}]. Params use the corresponding tool arguments; image_id is injected. Reference an earlier result with {'$ref':'0.id'}. Check complete/error: failure stops later steps, preserves partial work, and always closes the undo group. One Ctrl+Z in GIMP reverts it; this is not automatic rollback or programmatic undo. No edits by another bridge request interleave within the batch. Reports progress per step; gimp_cancel stops it before the next step (cancelled=true)."""
+    return _call("edit_batch", {"image_id": image_id, "steps": steps}, progress=_progress_reporter(ctx))
 
 
 # --------------------------------------------------------------------------- images
@@ -244,8 +272,9 @@ def gimp_apply_filter(
     opacity: float | None = None,
     blend_mode: str | None = None,
     name: str | None = None,
+    ctx: Context | None = None,
 ) -> dict[str, Any]:
-    """Apply a GEGL operation to a layer. mode='merge' bakes it in; mode='append' adds a non-destructive layer effect. Examples: white outline = op="gegl:dropshadow", params={"x":0,"y":0,"radius":0,"grow-radius":8,"color":"white"}; soft shadow = {"x":0,"y":6,"radius":12,"opacity":0.4}; blur = op="gegl:gaussian-blur", params={"std-dev-x":4,"std-dev-y":4}. gimp_help("filters") lists the useful ops."""
+    """Apply a GEGL operation to a layer. mode='merge' bakes it in; mode='append' adds a non-destructive layer effect. Examples: white outline = op="gegl:dropshadow", params={"x":0,"y":0,"radius":0,"grow-radius":8,"color":"white"}; soft shadow = {"x":0,"y":6,"radius":12,"opacity":0.4}; blur = op="gegl:gaussian-blur", params={"std-dev-x":4,"std-dev-y":4}. gimp_help("filters") lists the useful ops. A merge already in progress cannot be interrupted; for heavy work on large images prefer a recipe."""
     return _call(
         "apply_filter",
         {
@@ -257,6 +286,7 @@ def gimp_apply_filter(
             "blend_mode": blend_mode,
             "name": name,
         },
+        progress=_progress_reporter(ctx),
     )
 
 
@@ -691,9 +721,9 @@ def gimp_remove_background(layer_id: int, mode: str = "mask", model: str = "u2ne
 if ALLOW_PYTHON:
 
     @mcp.tool()
-    def gimp_run_python(code: str, image_id: int | None = None) -> dict[str, Any]:
-        """Run Python inside GIMP. Gimp, Gegl, Gio, GLib and helpers image_by_id/item_by_id/make_color are available; the namespace persists between calls. Returns stdout plus the expression value or `result`. Pass image_id to wrap the call in one undo step."""
-        return _call("exec", {"code": code, "image_id": image_id}, timeout=600.0)
+    def gimp_run_python(code: str, image_id: int | None = None, ctx: Context | None = None) -> dict[str, Any]:
+        """Run Python inside GIMP. Gimp, Gegl, Gio, GLib and helpers image_by_id/item_by_id/make_color are available; the namespace persists between calls. Returns stdout plus the expression value or `result`. Pass image_id to wrap the call in one undo step. Call checkpoint(fraction, text) inside loops to report progress and let gimp_cancel stop the code there."""
+        return _call("exec", {"code": code, "image_id": image_id}, timeout=600.0, progress=_progress_reporter(ctx))
 
 
 @mcp.tool()
@@ -703,8 +733,8 @@ def gimp_list_recipes() -> list[dict[str, Any]]:
 
 
 @mcp.tool()
-def gimp_run_recipe(name: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
-    """Run a recipe by name with parameters. Recipes are Python jobs executed inside GIMP with defaults applied."""
+def gimp_run_recipe(name: str, params: dict[str, Any] | None = None, ctx: Context | None = None) -> dict[str, Any]:
+    """Run a recipe by name with parameters. Recipes are Python jobs executed inside GIMP with defaults applied. Recipes report progress between items; gimp_cancel stops one at its next item and removes images it created."""
     try:
         module = recipes.get_recipe(name)
         resolved = recipes.resolve_params(name, params)
@@ -713,7 +743,7 @@ def gimp_run_recipe(name: str, params: dict[str, Any] | None = None) -> dict[str
     except (KeyError, ValueError) as exc:
         raise ToolError(str(exc)) from exc
     code = "params = " + repr(resolved) + "\n" + module.SOURCE
-    out = _call("exec", {"code": code}, timeout=600.0)
+    out = _call("exec", {"code": code}, timeout=600.0, progress=_progress_reporter(ctx))
     return {"recipe": name, "params": resolved, "result": out.get("result"), "stdout": out.get("stdout", "")}
 
 
@@ -782,8 +812,9 @@ def gimp_batch_recipe(
     output_dir: str,
     params: dict[str, Any] | None = None,
     output_ext: str | None = None,
+    ctx: Context | None = None,
 ) -> dict[str, Any]:
-    """Run a recipe over every file matching input_glob, writing to output_dir. Recipes must accept input_path and output_path."""
+    """Run a recipe over every file matching input_glob, writing to output_dir. Recipes must accept input_path and output_path. Reports progress per file; gimp_cancel stops it (cancelled=true, not_started lists the rest)."""
     try:
         module = recipes.get_recipe(name)
     except KeyError as exc:
@@ -796,20 +827,65 @@ def gimp_batch_recipe(
     out_dir = Path(os.path.expanduser(output_dir))
     out_dir.mkdir(parents=True, exist_ok=True)
     results = []
-    for src in files:
-        stem = Path(src).stem
-        ext = output_ext or Path(src).suffix or ".png"
-        if not ext.startswith("."):
-            ext = "." + ext
-        dst = str(out_dir / f"{stem}{ext}")
-        try:
-            resolved = recipes.resolve_params(name, {**(params or {}), "input_path": src, "output_path": dst})
-            code = "params = " + repr(resolved) + "\n" + module.SOURCE
-            out = _call("exec", {"code": code}, timeout=600.0)
-            results.append({"input": src, "ok": True, "result": out.get("result")})
-        except (RuntimeError, ValueError) as exc:
-            results.append({"input": src, "ok": False, "error": str(exc)})
-    return {"recipe": name, "count": len(results), "succeeded": sum(1 for r in results if r["ok"]), "results": results}
+    cancelled = False
+    _batch_cancel.clear()
+    _batch_active.set()
+    try:
+        for index, src in enumerate(files):
+            if _batch_cancel.is_set():
+                cancelled = True
+                break
+            stem = Path(src).stem
+            ext = output_ext or Path(src).suffix or ".png"
+            if not ext.startswith("."):
+                ext = "." + ext
+            dst = str(out_dir / f"{stem}{ext}")
+            report = _progress_reporter(ctx, start=index / len(files), span=1.0 / len(files))
+            if report is not None:
+                report({"fraction": 0.0, "text": f"file {index + 1} of {len(files)}: {Path(src).name}"})
+            try:
+                resolved = recipes.resolve_params(name, {**(params or {}), "input_path": src, "output_path": dst})
+                code = "params = " + repr(resolved) + "\n" + module.SOURCE
+                out = _call("exec", {"code": code}, timeout=600.0, progress=report)
+                results.append({"input": src, "ok": True, "result": out.get("result")})
+            except (RuntimeError, ValueError) as exc:
+                results.append({"input": src, "ok": False, "error": str(exc)})
+            except ToolError as exc:
+                if "OperationCancelled" not in str(exc):
+                    raise
+                results.append({"input": src, "ok": False, "error": str(exc), "cancelled": True})
+                cancelled = True
+                break
+    finally:
+        _batch_active.clear()
+    remaining = [src for src in files[len(results):]]
+    return {"recipe": name, "count": len(results), "succeeded": sum(1 for r in results if r["ok"]), "results": results,
+            "cancelled": cancelled, "not_started": remaining}
+
+
+@mcp.tool()
+def gimp_cancel(image_id: int | None = None) -> dict[str, Any]:
+    """Ask a long operation to stop. The bridge answers this even while another call is running: the running call stops at its next checkpoint (between recipe items, batch files or edit-batch steps, or before a filter starts) and returns an OperationCancelled error. A single GEGL merge already in progress cannot be interrupted. image_id limits the cancel to work on that image. Also reports what is running."""
+    batch = _batch_active.is_set()
+    if batch:
+        _batch_cancel.set()
+    # A separate connection: the shared client is held by the call being cancelled.
+    client = BridgeClient()
+    try:
+        result = client.call("cancel", {"image_id": image_id}, timeout=15.0)
+    except BridgeUnavailable as exc:
+        if "timed out" in str(exc) or "lost or invalid" in str(exc):
+            raise ToolError(
+                "GIMP did not answer the cancel within 15s: the running step has no checkpoint (for example a single "
+                "large filter merge). It will finish on its own; the cancel does not carry over to later calls."
+            ) from exc
+        raise ToolError(str(exc)) from exc
+    except BridgeError as exc:
+        hint = " Run gimp-agent-mcp install-plugin and restart GIMP." if exc.error_type == "UnknownOp" else ""
+        raise ToolError(f"{exc.error_type}: {exc}.{hint}") from exc
+    finally:
+        client.close()
+    return {**result, "batch_recipe_stopping": batch}
 
 
 # --------------------------------------------------------------------------- prompts + resources

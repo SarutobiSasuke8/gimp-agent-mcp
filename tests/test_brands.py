@@ -159,7 +159,7 @@ def test_brand_param_and_manifest_path(store, tmp_path):
 def test_run_recipe_sends_only_literal_values(store, monkeypatch):
     sent = {}
 
-    def fake_call(op, params=None, timeout=None):
+    def fake_call(op, params=None, timeout=None, progress=None):
         sent["code"] = params["code"]
         return {"result": {"ok": True}}
 

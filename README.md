@@ -105,7 +105,7 @@ Other GIMP MCP projects also provide TCP bridges and visual feedback. This proje
 | Everyday edits | `gimp_adjust`, `gimp_canvas`, `gimp_draw` |
 | Structured edit | `gimp_edit_batch`, `gimp_select`, `gimp_layer_mask`, `gimp_layer`, `gimp_text`, `gimp_list_fonts`, `gimp_path` |
 | Cut out | `gimp_remove_background` (optional rembg model runtime) |
-| Automate | `gimp_run_python`, `gimp_list_recipes`, `gimp_run_recipe`, `gimp_batch_recipe`, `gimp_brand` |
+| Automate | `gimp_run_python`, `gimp_list_recipes`, `gimp_run_recipe`, `gimp_batch_recipe`, `gimp_brand`, `gimp_cancel` |
 
 Images and items use integer IDs. Colours accept hex, common names, CSS RGB strings or component arrays; enums use nicks returned by the describe tools. Call `gimp_help("batch")` for grouped-edit examples. `gimp_run_python` may be disabled, reducing the tool count by one.
 
@@ -160,7 +160,7 @@ Version **0.5.0**, beta. Tested with Windows GIMP **3.2.4**, Linux GIMP **3.2.2*
 - `gimp_edit_batch` accepts bounded layer, text, selection, path, mask and filter edits. It does not keep a transaction open between separate agent calls or automatically roll back a failed batch. The human uses GIMP's Undo/Redo; there is no invented programmatic undo endpoint.
 - Some GEGL source operations, including linear gradients, are not drawable filters. Use the PDB gradient-fill procedure instead. Vector warp/liquify parity is not claimed.
 - Sprite packing currently takes equal-sized PNG files, without padding or direct open-layer input. It does not align animation or pack mixed-size rectangles.
-- Long filters are synchronous. Mid-filter cancellation and progress reporting remain follow-up work.
+- Long work reports progress and can be cancelled with `gimp_cancel` at checkpoints: between recipe items, batch files and edit-batch steps, between passes of `gimp_run_python` code that calls `checkpoint()`, and before a filter starts. A single GEGL merge already running cannot be interrupted, and GIMP's own per-procedure progress is not forwarded yet.
 
 ## Verify your setup
 
