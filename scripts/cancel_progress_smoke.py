@@ -155,7 +155,7 @@ def main() -> int:
     finally:
         if launched:
             try:
-                control.call("shutdown", {"quit_gimp": True}, timeout=10)
+                control.shutdown_and_wait(quit_gimp=True)
             except BridgeError:
                 pass
         control.close()
