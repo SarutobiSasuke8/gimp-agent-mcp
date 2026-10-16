@@ -141,3 +141,19 @@ def test_pid_probe_sees_live_and_exited_processes():
     proc = subprocess.Popen([sys.executable, "-c", "pass"])
     proc.wait()  # reaped, so the pid is free
     assert bridge_client._pid_alive(proc.pid) is False
+
+
+def test_shutdown_without_quit_choice_lets_the_bridge_decide(bridge_env, monkeypatch):
+    fake = FakeBridge(bridge_env, linger=0.1)
+    client = BridgeClient()
+    sent = []
+    original = client._call_locked
+
+    def spy(op, params=None, *args, **kwargs):
+        sent.append((op, params))
+        return original(op, params, *args, **kwargs)
+
+    monkeypatch.setattr(client, "_call_locked", spy)
+    assert client.shutdown_and_wait(quit_gimp=None, wait_seconds=10)["stopped"] is True
+    assert ("shutdown", {}) in sent
+    fake.stop()

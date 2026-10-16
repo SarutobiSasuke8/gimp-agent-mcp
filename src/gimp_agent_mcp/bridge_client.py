@@ -209,13 +209,14 @@ class BridgeClient:
             pass
         return info
 
-    def shutdown_and_wait(self, quit_gimp: bool = True, wait_seconds: float = 30.0, poll: float = 0.1) -> dict[str, Any]:
+    def shutdown_and_wait(self, quit_gimp: bool | None = True, wait_seconds: float = 30.0, poll: float = 0.1) -> dict[str, Any]:
         """Ask the bridge to stop, then return only once it is really gone.
 
         The bridge answers ``shutdown`` before it stops, and GIMP quits a little later. A caller that moves on
         straight away (the next CI step, or a new launch) could otherwise still reach the old bridge and lose its
         socket mid-request when GIMP exits. "Gone" means: nothing accepts connections on the old port, the bridge
         file no longer names the old bridge, and (on POSIX) the bridge plug-in process has exited.
+        ``quit_gimp=None`` leaves the choice to the bridge (quit when headless, keep a GUI open).
         """
         with self._lock:
             before = self._ping_locked()
@@ -223,7 +224,8 @@ class BridgeClient:
                 return {"stopped": True, "already_stopped": True, "waited": 0.0}
             port = self._port
             pid = before.get("pid")
-            result = self._call_locked("shutdown", {"quit_gimp": quit_gimp}, timeout=10.0)
+            params = {} if quit_gimp is None else {"quit_gimp": bool(quit_gimp)}
+            result = self._call_locked("shutdown", params, timeout=10.0)
             self._close_locked()
         started = time.monotonic()
         deadline = started + wait_seconds
