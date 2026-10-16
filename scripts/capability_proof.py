@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import base64
 import json
+import os
 import sys
 import time
 from pathlib import Path
@@ -18,10 +19,24 @@ class GimpStopped(Exception):
     """GIMP stopped answering mid-proof; later checks would only report the same outage."""
 
 
+def require_own_gimp(owned: bool) -> None:
+    """CI sets GIMP_AGENT_REQUIRE_OWN_GIMP=1 so each proof runs on the GIMP it launched itself.
+
+    Attaching to a bridge left by the previous step is how the macOS arm64 job failed on 15 Oct 2026: that GIMP
+    was already shutting down and quit mid-proof. Fail loudly instead of borrowing it.
+    """
+    if not owned and os.environ.get("GIMP_AGENT_REQUIRE_OWN_GIMP") == "1":
+        raise SystemExit(
+            "GIMP_AGENT_REQUIRE_OWN_GIMP=1 but a bridge from an earlier step still answers; "
+            "the previous step's shutdown did not wait for GIMP to go."
+        )
+
+
 def run(output: Path):
     output.mkdir(parents=True, exist_ok=True)
     c = BridgeClient()
     owned = c.ping() is None
+    require_own_gimp(owned)
     if owned:
         launch_gimp("headless", wait_seconds=120, client=c)
     report = {"gimp_version": c.call("ping")["gimp_version"], "checks": []}
@@ -217,6 +232,11 @@ finally:
         # Report the crash once instead of a cascade of "no bridge token" failures.
         report["aborted"] = f"GIMP stopped responding during {stopped}; remaining checks were not run. See gimp-agent-launch.log."
         print("ABORT", report["aborted"], flush=True)
+    except BridgeUnavailable as exc:
+        # Lost between checks (fixture set-up, say). Previously this escaped with the report still saying
+        # passed: true, because no check had recorded the failure.
+        report["aborted"] = f"GIMP stopped responding between checks ({exc}); remaining checks were not run. See gimp-agent-launch.log."
+        print("ABORT", report["aborted"], flush=True)
     finally:
         for sid in snapshots:
             try:
@@ -229,7 +249,7 @@ finally:
             except BridgeError:
                 pass
         if owned and "aborted" not in report:
-            call("shutdown", quit_gimp=True)
+            c.shutdown_and_wait(quit_gimp=True)
         c.close()
         report["passed"] = "aborted" not in report and all(item["passed"] for item in report["checks"])
         (output / "report.json").write_text(json.dumps(report, indent=2), encoding="utf-8")

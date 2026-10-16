@@ -175,6 +175,8 @@ uv run python scripts/everyday_proof.py /path/to/proof-output
 
 CI checks supported Python versions, and separate jobs exercise real GIMP on Windows, Linux and both macOS architectures. Release publication depends on all three real-GIMP workflows passing. The general capability proof measures curves, gradients and brush output and checks batch recovery, document boundaries, diagnostic overlays, nested previews and snapshot cleanup. A second proof resolves and exercises every action in `gimp_adjust`, `gimp_canvas` and `gimp_draw`, recording dimensions, layer counts and measured pixels. See [validation details](docs/VALIDATION.md).
 
+Each smoke and proof script runs on a GIMP it launched itself and, when it shuts that GIMP down, waits until the bridge is really gone (port closed, bridge file removed, plug-in process exited) before returning. A bridge that has been asked to shut down refuses new connections and new requests at once. The smoke asserts this in its `shutdown (bridge gone before return)` check, and CI sets `GIMP_AGENT_REQUIRE_OWN_GIMP=1` so a proof that finds an earlier step's bridge still answering fails with that reason instead of borrowing it. This fixed the macOS arm64 live-smoke failures of 15 October 2026, which looked like GIMP crashes but were a proof attaching to the previous step's GIMP while it quit. The live jobs do not retry checks: if the macOS job fails, its log says whether macOS wrote a GIMP crash report, and the `macos-gimp-proof-<arch>` artifact holds the proof reports, the GIMP launch log and any crash reports.
+
 ## Architecture and trust
 
 `MCP client → stdio server → authenticated loopback TCP → plug-in inside GIMP`

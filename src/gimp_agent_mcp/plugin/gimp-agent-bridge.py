@@ -381,6 +381,10 @@ class Bridge:
         self.loop = GLib.MainLoop()
         self.server_sock = None
         self.stopping = False
+        # Set by op_shutdown: from then on this bridge refuses new connections and new work, so a client
+        # that arrives during the shutdown grace period cannot attach to a GIMP that is about to quit.
+        self.shutting_down = False
+        self.bridge_file = None
         Gegl.init(None)
         self.pdb = Gimp.get_pdb()
         self._proc_names = None
@@ -477,6 +481,8 @@ class Bridge:
             return {"id": req_id, "ok": False, "error": {"type": "Unauthorized", "message": "bad or missing token"}}
         op = request.get("op")
         params = request.get("params") or {}
+        if self.shutting_down:
+            return {"id": req_id, "ok": False, "error": {"type": core.STOPPING_ERROR, "message": core.STOPPING_MESSAGE}}
         if not isinstance(op, str) or not hasattr(self, "op_" + op):
             return {"id": req_id, "ok": False, "error": {"type": "UnknownOp", "message": f"unknown op {op!r}"}}
         job = None
@@ -671,8 +677,25 @@ class Bridge:
 
     def op_shutdown(self, params):
         quit_gimp = bool(params.get("quit_gimp", self.mode == "headless"))
+        # Stop being discoverable now, not when the timer below fires. Before this, a client that started
+        # inside the grace period (the next CI step, typically) still found the bridge file, connected,
+        # got answers for a few calls and then lost its socket when GIMP quit under it.
+        self._stop_accepting()
         GLib.timeout_add(150, self._do_shutdown, quit_gimp)
-        return {"stopping": True, "quit_gimp": quit_gimp}
+        return {"stopping": True, "quit_gimp": quit_gimp, "accepting": False}
+
+    def _stop_accepting(self):
+        self.shutting_down = True
+        watch = getattr(self, "_server_watch", None)
+        if watch:
+            with contextlib.suppress(Exception):
+                GLib.source_remove(watch)
+            self._server_watch = None
+        if self.server_sock is not None:
+            with contextlib.suppress(OSError):
+                self.server_sock.close()
+            self.server_sock = None
+        _remove_own_bridge_file(self.bridge_file)
 
     def _do_shutdown(self, quit_gimp):
         self.close()
@@ -1892,6 +1915,7 @@ def _run_bridge(procedure, config):
 
     port = bridge.port  # may differ from the request if another bridge holds the port
     core.write_bridge_file(path, port=port, token=token, pid=os.getpid(), gimp_version=Gimp.version(), mode=mode)
+    bridge.bridge_file = path
     if mode == "gui":
         Gimp.message(f"GIMP Agent Bridge listening on {core.DEFAULT_HOST}:{port}. Agents will use this window.")
     print(f"[gimp-agent-bridge] listening on {core.DEFAULT_HOST}:{port} ({mode})", file=sys.stderr)
@@ -1900,12 +1924,18 @@ def _run_bridge(procedure, config):
         bridge.loop.run()
     finally:
         bridge.close()
-        # Only remove the bridge file if it still describes this bridge; a newer one may have replaced it.
-        current = core.read_bridge_file(path)
-        if current and int(current.get("pid", -1)) == os.getpid():
-            with contextlib.suppress(OSError):
-                os.remove(path)
+        _remove_own_bridge_file(path)
     return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
+
+
+def _remove_own_bridge_file(path):
+    """Only remove the bridge file if it still describes this bridge; a newer one may have replaced it."""
+    if not path:
+        return
+    current = core.read_bridge_file(path)
+    if current and int(current.get("pid", -1)) == os.getpid():
+        with contextlib.suppress(OSError):
+            os.remove(path)
 
 
 class GimpAgentBridgePlugIn(Gimp.PlugIn):

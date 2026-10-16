@@ -23,6 +23,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - `scripts/capability_proof.py` stops at the first lost bridge and reports which check GIMP died in, instead of failing every later check with "no bridge token found". The 2026-09-08 macOS arm64 failure on `main` was GIMP exiting during the gradient-fill check; the same commit passed on re-run.
 
+### Fixed
+
+- Shutdown race behind the recurring macOS arm64 live-smoke failures (runs 38725621437 and 38806864812, and probably the 2026-09-08 failure above). `shutdown` answered and then kept the bridge listening for its 150 ms grace period, and the smoke returned at once. On the faster arm64 runner the next proof step started inside that window, found the old bridge, attached to it instead of launching its own GIMP (one launch in the log instead of three, no crash report), and lost its socket when that GIMP quit. GIMP did not crash. A bridge now stops accepting connections, refuses new requests with `BridgeStopping` and removes its bridge file as soon as a shutdown is requested. The new `BridgeClient.shutdown_and_wait()` returns only once the port is closed, the bridge file is gone and (on POSIX) the plug-in process has exited; the smoke and proof scripts use it. The smoke's `shutdown (bridge gone before return)` check and `GIMP_AGENT_REQUIRE_OWN_GIMP=1` in the live workflows guard against regressions.
+- `scripts/capability_proof.py` no longer writes `"passed": true` when the bridge is lost between checks; that now aborts the report with the reason.
+
 ## [0.5.0] - 2026-09-08
 
 ### Added
