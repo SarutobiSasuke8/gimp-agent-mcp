@@ -15,6 +15,9 @@ jobs:
     name: Real GIMP 3 headless smoke test
     runs-on: windows-latest
     timeout-minutes: 25
+    env:
+      # Proofs must run on their own GIMP, never one the previous step is shutting down (see live-macos.yml).
+      GIMP_AGENT_REQUIRE_OWN_GIMP: "1"
     steps:
       - uses: actions/checkout@v5
       - uses: astral-sh/setup-uv@v7
