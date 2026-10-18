@@ -396,7 +396,19 @@ def run_smoke(mode: str = "headless", keep: bool = False, verbose: bool = True, 
         check("close_image", lambda: client.call("close_image", {"image_id": image_id}))
 
     if started_here and not keep:
-        check("shutdown", lambda: client.call("shutdown", {"quit_gimp": True}, timeout=10))
+        def _shutdown():
+            # Regression check for the macOS arm64 live-smoke failures of 15 Oct 2026: shutdown used to return
+            # while the old bridge still answered, so the next proof step attached to a GIMP that then quit
+            # under it. Shutdown must leave nothing a fresh client can reach.
+            done = client.shutdown_and_wait(quit_gimp=True)
+            probe = BridgeClient()
+            try:
+                assert probe.ping() is None, "a fresh client still reached the bridge after shutdown returned"
+            finally:
+                probe.close()
+            return done
+
+        check("shutdown (bridge gone before return)", _shutdown)
     client.close()
 
     log(f"artifacts: {tmpdir}")

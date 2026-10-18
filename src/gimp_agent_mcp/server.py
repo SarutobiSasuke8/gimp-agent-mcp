@@ -53,6 +53,8 @@ _client = BridgeClient()
 # gimp_batch_recipe loops in this process, so gimp_cancel also stops it between files.
 _batch_cancel = threading.Event()
 _batch_active = threading.Event()
+# gimp_shutdown waits at most this long for the bridge, its bridge file and its plug-in process to go.
+SHUTDOWN_WAIT_SECONDS = 30.0
 
 
 def _progress_reporter(ctx: Context | None, start: float = 0.0, span: float = 1.0):
@@ -148,13 +150,29 @@ def gimp_launch(mode: str = "gui", wait_seconds: int = 90) -> dict[str, Any]:
 
 @mcp.tool()
 def gimp_shutdown(quit_gimp: bool | None = None) -> dict[str, Any]:
-    """Stop the bridge. quit_gimp defaults to True for headless sessions and False for the GUI (unsaved work is not prompted for)."""
-    params: dict[str, Any] = {}
-    if quit_gimp is not None:
-        params["quit_gimp"] = bool(quit_gimp)
-    result = _call("shutdown", params, timeout=10.0)
-    _client.close()
-    return result
+    """Stop the bridge and wait up to 30 s until it is gone. quit_gimp defaults to True for headless sessions and False for the GUI (unsaved work is not prompted for). fully_exited is true once GIMP was asked to quit and the bridge port is closed, its bridge file removed and (on POSIX) its plug-in process ended; it is false on a timeout, with what was still present in detail."""
+    try:
+        result = _client.shutdown_and_wait(quit_gimp=quit_gimp, wait_seconds=SHUTDOWN_WAIT_SECONDS)
+    except BridgeUnavailable as exc:
+        raise ToolError(str(exc)) from exc
+    except BridgeError as exc:
+        if exc.error_type != "ShutdownTimeout":
+            raise ToolError(f"{exc.error_type}: {exc}") from exc
+        # The bridge accepted the shutdown but did not disappear in time: report that rather than fail the call.
+        return {
+            "stopping": True,
+            "stopped": False,
+            "fully_exited": False,
+            "timed_out": True,
+            "waited": SHUTDOWN_WAIT_SECONDS,
+            "detail": str(exc),
+        }
+    finally:
+        _client.close()
+    if result.get("already_stopped"):
+        # Nothing answered, so there was nothing to wait for; whether a GIMP without a bridge is open is unknown.
+        return {**result, "timed_out": False, "fully_exited": None, "detail": "no bridge was running"}
+    return {**result, "timed_out": False, "fully_exited": bool(result.get("stopped") and result.get("quit_gimp"))}
 
 
 @mcp.tool()

@@ -28,6 +28,13 @@ jobs:
       GIMP_AGENT_CONFIG_DIR: /tmp/gimp-agent-profile
       GIMP_AGENT_BRIDGE_FILE: /tmp/gimp-agent-profile/agent-bridge.json
       GIMP_AGENT_PORT: "23877"
+      # Each proof script must run on the GIMP it launched. The arm64 failures of 15 Oct 2026 (runs 38725621437
+      # and 38806864812) were not GIMP crashes: the smoke step's shutdown returned before its GIMP had gone, the
+      # next step found that bridge still answering, attached to it, and lost the socket when GIMP quit under
+      # it (one GIMP launch in the log instead of three, no crash report). Shutdown now waits until the bridge
+      # is gone, the smoke asserts that, and this variable turns any recurrence into an explicit failure.
+      # There is deliberately no retry: nothing here was flaky upstream, and a retry would hide a lifecycle bug.
+      GIMP_AGENT_REQUIRE_OWN_GIMP: "1"
     steps:
       - uses: actions/checkout@v5
       - uses: astral-sh/setup-uv@v7
@@ -56,6 +63,14 @@ jobs:
           mkdir -p crash-reports
           find ~/Library/Logs/DiagnosticReports /Library/Logs/DiagnosticReports -iname '*gimp*' -exec cp {} crash-reports/ \; 2>/dev/null || true
           ls -la crash-reports
+          # Name the failure class so nobody has to guess "flake" from a lost socket.
+          launches=$(grep -c '^=== launch' /tmp/gimp-agent-profile/gimp-agent-launch.log 2>/dev/null || echo 0)
+          echo "GIMP launches in this job: $launches (a fully passing job has 3: smoke, capability proof, everyday proof)"
+          if [ -n "$(ls -A crash-reports)" ]; then
+            echo "::error title=GIMP crashed::macOS wrote a GIMP crash report; see crash-reports/ in the macos-gimp-proof-${{ matrix.arch }} artifact."
+          else
+            echo "::error title=No GIMP crash report::GIMP did not crash. Read proof-output/*.json and gimp-agent-launch.log for the failing check or a bridge lifecycle problem."
+          fi
       - name: Upload capability evidence
         if: always()
         uses: actions/upload-artifact@v6

@@ -303,6 +303,9 @@ def resolve_edit_refs(value, results):
 
 # Ops a running operation answers between its own steps. Every other request waits its turn.
 CONTROL_OPS = frozenset({"cancel", "jobs"})
+# Error type and message a bridge returns once a shutdown has been requested. Clients treat it as "no bridge".
+STOPPING_ERROR = "BridgeStopping"
+STOPPING_MESSAGE = "this bridge is shutting down; launch GIMP again or start the bridge from the Filters menu"
 PROGRESS_INTERVAL = 0.25
 
 

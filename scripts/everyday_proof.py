@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 import time
 from pathlib import Path
@@ -15,6 +16,9 @@ def run(output: Path) -> int:
     output.mkdir(parents=True, exist_ok=True)
     client = BridgeClient()
     owned = client.ping() is None
+    if not owned and os.environ.get("GIMP_AGENT_REQUIRE_OWN_GIMP") == "1":
+        # See scripts/capability_proof.py: borrowing a bridge from an earlier step is how arm64 failed.
+        raise SystemExit("GIMP_AGENT_REQUIRE_OWN_GIMP=1 but a bridge from an earlier step still answers.")
     if owned:
         launch_gimp("headless", wait_seconds=120, client=client)
     server._client = client
@@ -119,7 +123,7 @@ def run(output: Path) -> int:
             except BridgeError:
                 pass
         if owned:
-            client.call("shutdown", {"quit_gimp": True}, timeout=10)
+            client.shutdown_and_wait(quit_gimp=True)
         client.close()
         report["passed"] = all(item["passed"] for item in report["checks"])
         (output / "everyday-report.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
