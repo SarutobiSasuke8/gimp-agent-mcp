@@ -1,0 +1,14 @@
+Crop the open photo for an Open Graph preview without scaling it.
+
+For several sizes at once, with measured output, use the social_crop recipe (see gimp_help("recipes")). This brief is one crop by hand. Read width and height with gimp_image_info. The focus pixel in this brief is (1680, 420) on a 2400 by 1800 image. Place a 1200 by 630 crop so that pixel stays inside:
+
+  x = min(max(1680 - 1200 // 2, 0), 2400 - 1200) = 1080
+  y = min(max(420 - 630 // 2, 0), 1800 - 630) = 105
+
+Call gimp_canvas(image_id, action="crop", width=1200, height=630, x=1080, y=105).
+
+Other conventional sizes, only when both sides fit the source: 1600x900, 1080x1080, 1080x1350, 1280x720. 1080x1920 does not fit a 1800px-tall image. Do not scale to force it. Crop never enlarges.
+
+Expected output
+---------------
+gimp_canvas returns action "crop", route "pdb", and operation name gimp-image-crop. image.width is 1200 and image.height is 630. The focus pixel is then at (600, 315) in the cropped image: 1680 - 1080 and 420 - 105. gimp_measure(kind="color", image_id=..., x=600, y=315) reads that pixel. Export with gimp_export to a .jpg or .png path. For JPEG, options {"quality": 0.85} is the documented 0..1 range. Do not invent a profile name; social_crop lists the valid ones.

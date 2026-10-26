@@ -88,7 +88,7 @@ Claude Code can also install the server and skills as a plugin; see [skills inst
 | Everyday editing | Three compact tools cover common adjustments, canvas transforms, fills and simple drawing. Every action reports the installed GEGL or PDB operation it used. |
 | One undo step | `gimp_edit_batch` groups supported edits in one call. `gimp_undo_group` holds one image's edits across calls until ended, so one Ctrl+Z can revert the turn. A lost bridge connection closes its groups. |
 | Runtime discovery | Search and describe the installed PDB procedures and GEGL operations, including parameter names, types and enum values. Numeric-array arguments support curves and brush strokes. |
-| Repeatable jobs | Ten recipes and folder batching, plus three bundled workflow skills. |
+| Repeatable jobs | Eleven recipes and folder batching, plus three bundled workflow skills. |
 | Honest failure handling | A lost connection never silently replays an edit whose outcome is unknown. Reconnect, inspect, then decide whether to retry. |
 
 Other GIMP MCP projects also provide TCP bridges and visual feedback. This project's emphasis is editable output, measurement, grouped edits and reproducible validation. Generic API access is broad, but does not guarantee that every GIMP procedure or GEGL operation works with every argument combination.
@@ -105,7 +105,7 @@ Other GIMP MCP projects also provide TCP bridges and visual feedback. This proje
 | Everyday edits | `gimp_adjust`, `gimp_canvas`, `gimp_draw` |
 | Structured edit | `gimp_edit_batch`, `gimp_undo_group`, `gimp_select`, `gimp_layer_mask`, `gimp_layer`, `gimp_text`, `gimp_list_fonts`, `gimp_path` |
 | Cut out | `gimp_remove_background` (optional rembg model runtime) |
-| Automate | `gimp_run_python`, `gimp_list_recipes`, `gimp_run_recipe`, `gimp_batch_recipe` |
+| Automate | `gimp_run_python`, `gimp_list_recipes`, `gimp_run_recipe`, `gimp_batch_recipe`, `gimp_brand`, `gimp_cancel` |
 
 Images and items use integer IDs. Colours accept hex, common names, CSS RGB strings or component arrays; enums use nicks returned by the describe tools. Call `gimp_help("batch")` for grouped-edit examples. `gimp_run_python` may be disabled, reducing the tool count by one.
 
@@ -126,6 +126,7 @@ gimp_render(image_id=3, overlay=["grid", "layers", "selection"], grid_size=100,
 | `compose` | Cards and banners from a manifest of images, text, shapes and effects. |
 | `sprite_sheet_pack` | Ordered, equal-sized PNGs → verified grid PNG, layered XCF and atlas JSON, with optional margin and spacing. |
 | `sprite_atlas_pack` | Mixed-size PNGs → padded, optionally trimmed atlas PNG, layered XCF and atlas JSON, verified pixel for pixel. |
+| `social_crop` | Named social profiles (Open Graph, X, Instagram, story, YouTube or custom) around a focus point, with measured, pixel-checked output. |
 | `sprite_sheet_slice` | Fixed-size tiles from a sheet, optionally skipping empty cells. |
 | `web_optimise` | Resize and adjust export quality toward a file-size budget. |
 | `icon_set` | Export a square source at multiple sizes. |
@@ -133,7 +134,25 @@ gimp_render(image_id=3, overlay=["grid", "layers", "selection"], grid_size=100,
 | `contact_sheet` | Labelled thumbnails from a folder. |
 | `fit_and_export` | Fit to a maximum edge and export by extension. |
 
-[Recipe arguments and examples](docs/RECIPES.md) · [Skills](docs/SKILLS.md)
+### Brand kits for compose
+
+Store a brand's colours, fonts, assets and canvas sizes once, then refer to them by token. Profiles are JSON files in the per-user config directory (`%APPDATA%\gimp-agent-mcp\brands` on Windows, `~/Library/Application Support/gimp-agent-mcp/brands` on macOS, `$XDG_CONFIG_HOME/gimp-agent-mcp/brands` elsewhere; `GIMP_AGENT_BRANDS_DIR` overrides). Font names are checked against the running GIMP when a profile is saved.
+
+```text
+gimp_brand(action="set", profile={"name": "example",
+  "colors": {"bg": "#0f1117", "accent": "#1f3a8a", "text": "#ffffff"},
+  "fonts": {"headline": "Bahnschrift Bold"}, "assets": {"logo": "/brand/logo.png"},
+  "canvases": {"x-card": [1200, 675], "og": [1200, 630]}})
+
+gimp_run_recipe("compose", {"output_path": "out/card.png", "manifest": {
+  "brand": "example", "canvas": "x-card", "background": "@bg",
+  "items": [{"type": "image", "path": "@logo", "x": 40, "y": 40, "width": 160},
+            {"type": "text", "text": "Launch day", "font": "@headline", "size": 72, "color": "@text", "x": 40, "y": 240}]}})
+```
+
+Tokens are resolved in the server before anything reaches GIMP, so a token manifest becomes exactly the manifest you would have written by hand. Literal values still work and win over the profile; an unknown token fails with the profile name and its available keys. `gimp_help("compose")` has the full rules.
+
+[Recipe arguments and examples](docs/RECIPES.md) · [Asset workflows](docs/ASSET_WORKFLOWS.md) · [Skills](docs/SKILLS.md)
 
 ## Tested scope and limits
 
@@ -141,9 +160,9 @@ Version **0.5.0**, beta. Tested with Windows GIMP **3.2.4**, Linux GIMP **3.2.2*
 
 - `gimp_edit_batch` accepts bounded layer, text, selection, path, mask and filter edits. `gimp_undo_group(image_id, action="start", name="agent: sticker pass")` holds a group across calls; end it with `action="end"`. `gimp_status` lists open groups. A client disconnect closes its groups. The supplied name is tracked by the bridge, but GIMP 3's public undo-group API cannot set the Undo History label. The human uses GIMP's Undo/Redo; there is no programmatic undo endpoint.
 - `uv run python scripts/undo_group_smoke.py` checks three edits against a pre-turn snapshot after you press Ctrl+Z once in a GUI GIMP session. The headless `gimp-agent-mcp smoke` check covers group lifecycle and disconnect cleanup.
-- Some GEGL source operations, including linear gradients, are not drawable filters. Use the PDB gradient-fill procedure instead. Vector warp/liquify parity is not claimed.
-- Sprite packing currently takes equal-sized PNG files, without padding or direct open-layer input. It does not align animation or pack mixed-size rectangles.
-- Long filters are synchronous. Mid-filter cancellation and progress reporting remain follow-up work.
+- Some GEGL source operations, including linear gradients, are not drawable filters. Use the PDB gradient-fill procedure instead. Vector warp/liquify parity is not claimed; see the [warp investigation note](docs/WARP_INVESTIGATION.md).
+- Sprite packing takes equal-sized frames (`sprite_sheet_pack`, with margin and spacing) or mixed-size PNGs and open layers (`sprite_atlas_pack`, with padding and trimming). Neither aligns animation or rotates sprites.
+- Long work reports progress and can be cancelled with `gimp_cancel` at checkpoints: between recipe items, batch files and edit-batch steps, between passes of `gimp_run_python` code that calls `checkpoint()`, and before a filter starts. A single GEGL merge already running cannot be interrupted, and GIMP's own per-procedure progress is not forwarded yet.
 
 ## Verify your setup
 
@@ -156,6 +175,8 @@ uv run python scripts/everyday_proof.py /path/to/proof-output
 ```
 
 CI checks supported Python versions, and separate jobs exercise real GIMP on Windows, Linux and both macOS architectures. Release publication depends on all three real-GIMP workflows passing. The general capability proof measures curves, gradients and brush output and checks batch recovery, document boundaries, diagnostic overlays, nested previews and snapshot cleanup. A second proof resolves and exercises every action in `gimp_adjust`, `gimp_canvas` and `gimp_draw`, recording dimensions, layer counts and measured pixels. See [validation details](docs/VALIDATION.md).
+
+Each smoke and proof script runs on a GIMP it launched itself and, when it shuts that GIMP down, waits until the bridge is really gone (port closed, bridge file removed, plug-in process exited) before returning. A bridge that has been asked to shut down refuses new connections and new requests at once. The smoke asserts this in its `shutdown (bridge gone before return)` check, and CI sets `GIMP_AGENT_REQUIRE_OWN_GIMP=1` so a proof that finds an earlier step's bridge still answering fails with that reason instead of borrowing it. This fixed the macOS arm64 live-smoke failures of 15 October 2026, which looked like GIMP crashes but were a proof attaching to the previous step's GIMP while it quit. The live jobs do not retry checks: if the macOS job fails, its log says whether macOS wrote a GIMP crash report, and the `macos-gimp-proof-<arch>` artifact holds the proof reports, the GIMP launch log and any crash reports.
 
 ## Architecture and trust
 

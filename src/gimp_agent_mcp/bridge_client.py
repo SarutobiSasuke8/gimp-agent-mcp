@@ -9,6 +9,7 @@ import sys
 import threading
 import time
 import uuid
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -113,25 +114,57 @@ class BridgeClient:
 
     # -- calls ------------------------------------------------------------------------
 
-    def call(self, op: str, params: dict[str, Any] | None = None, timeout: float | None = None) -> Any:
-        with self._lock:
-            return self._call_locked(op, params, timeout)
+    def call(
+        self,
+        op: str,
+        params: dict[str, Any] | None = None,
+        timeout: float | None = None,
+        on_progress: Callable[[dict[str, Any]], None] | None = None,
+    ) -> Any:
+        """Send one request and wait for its reply.
 
-    def _call_locked(self, op: str, params: dict[str, Any] | None = None, timeout: float | None = None) -> Any:
+        With ``on_progress`` the request asks the bridge for interim progress lines, which are passed to the
+        callback as they arrive. ``timeout`` applies to each wait, so a long operation that keeps reporting
+        progress is not cut off by it.
+        """
+        with self._lock:
+            if on_progress is None:
+                return self._call_locked(op, params, timeout)
+            return self._call_locked(op, params, timeout, on_progress)
+
+    def _call_locked(
+        self,
+        op: str,
+        params: dict[str, Any] | None = None,
+        timeout: float | None = None,
+        on_progress: Callable[[dict[str, Any]], None] | None = None,
+    ) -> Any:
         self.connect()
         assert self._sock and self._rfile and self._wfile
         req_id = uuid.uuid4().hex
-        payload = core.encode_message({"id": req_id, "token": self._token, "op": op, "params": params or {}})
+        message: dict[str, Any] = {"id": req_id, "token": self._token, "op": op, "params": params or {}}
+        if on_progress is not None:
+            message["progress"] = True
+        payload = core.encode_message(message)
         try:
             self._sock.settimeout(self.timeout if timeout is None else timeout)
             self._wfile.write(payload)
             self._wfile.flush()
-            line = self._rfile.readline()
-            if not line:
-                raise ConnectionError("bridge closed the connection")
-            response = core.decode_message(line)
-            if response.get("id") != req_id:
-                raise ValueError("bridge response id does not match request")
+            while True:
+                line = self._rfile.readline()
+                if not line:
+                    raise ConnectionError("bridge closed the connection")
+                response = core.decode_message(line)
+                if response.get("id") != req_id:
+                    raise ValueError("bridge response id does not match request")
+                if "progress" in response and "ok" not in response:
+                    if on_progress is not None:
+                        try:
+                            on_progress(response["progress"])
+                        except Exception:  # noqa: BLE001 - a reporting failure must not lose the reply
+                            pass
+                    continue
+                break
         except (OSError, ConnectionError, ValueError) as exc:
             self.close()
             raise BridgeUnavailable(
@@ -146,6 +179,10 @@ class BridgeClient:
         if not response.get("ok"):
             err = response.get("error") or {}
             message = err.get("message", "unknown bridge error")
+            if err.get("type") == core.STOPPING_ERROR:
+                # The bridge accepted a shutdown and will not do more work; treat it like no bridge at all.
+                self.close()
+                raise BridgeUnavailable(message, core.STOPPING_ERROR)
             if err.get("type") == "UnknownOp":
                 # The usual cause is a plug-in left over from an older release.
                 message = f"{message}. {paths.PLUGIN_UPDATE_HINT}"
@@ -171,6 +208,73 @@ class BridgeClient:
         except BridgeError:
             pass
         return info
+
+    def shutdown_and_wait(self, quit_gimp: bool | None = True, wait_seconds: float = 30.0, poll: float = 0.1) -> dict[str, Any]:
+        """Ask the bridge to stop, then return only once it is really gone.
+
+        The bridge answers ``shutdown`` before it stops, and GIMP quits a little later. A caller that moves on
+        straight away (the next CI step, or a new launch) could otherwise still reach the old bridge and lose its
+        socket mid-request when GIMP exits. "Gone" means: nothing accepts connections on the old port, the bridge
+        file no longer names the old bridge, and (on POSIX) the bridge plug-in process has exited.
+        ``quit_gimp=None`` leaves the choice to the bridge (quit when headless, keep a GUI open).
+        """
+        with self._lock:
+            before = self._ping_locked()
+            if before is None:
+                return {"stopped": True, "already_stopped": True, "waited": 0.0}
+            port = self._port
+            pid = before.get("pid")
+            params = {} if quit_gimp is None else {"quit_gimp": bool(quit_gimp)}
+            result = self._call_locked("shutdown", params, timeout=10.0)
+            self._close_locked()
+        started = time.monotonic()
+        deadline = started + wait_seconds
+        while True:
+            state = _bridge_presence(port, pid)
+            if not any(state.values()):
+                return {**(result or {}), "stopped": True, "waited": round(time.monotonic() - started, 3)}
+            if time.monotonic() >= deadline:
+                raise BridgeError(
+                    f"bridge on port {port} (pid {pid}) was asked to shut down but is still present after "
+                    f"{wait_seconds}s: {state}",
+                    "ShutdownTimeout",
+                )
+            time.sleep(poll)
+
+
+def _bridge_presence(port: int | None, pid: Any) -> dict[str, bool]:
+    """What is still left of a bridge that was asked to stop. All False means it has gone."""
+    listening = False
+    if port:
+        try:
+            with socket.create_connection((core.DEFAULT_HOST, port), timeout=1.0):
+                listening = True
+        except OSError:
+            listening = False
+    bf = paths.bridge_file()
+    info = core.read_bridge_file(str(bf)) if bf is not None else None
+    file_names_it = bool(info and pid is not None and str(info.get("pid")) == str(pid))
+    return {"listening": listening, "bridge_file": file_names_it, "process": _pid_alive(pid)}
+
+
+def _pid_alive(pid: Any) -> bool:
+    if sys.platform == "win32" or not isinstance(pid, int) or pid <= 0:
+        return False  # Windows: port and bridge file are the signal; there is no cheap signal-0 probe.
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    except OSError:
+        return False
+    # In a container whose PID 1 does not reap orphans, an exited plug-in lingers as a zombie; that is gone too.
+    try:
+        with open(f"/proc/{pid}/stat", encoding="ascii", errors="replace") as fh:
+            state = fh.read().rsplit(")", 1)[-1].split()[0]
+        return state not in ("Z", "X")
+    except (OSError, IndexError):
+        return True
 
 
 # --------------------------------------------------------------------------- launching

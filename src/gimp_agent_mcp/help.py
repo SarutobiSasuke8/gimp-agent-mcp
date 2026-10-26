@@ -19,8 +19,9 @@ HOW TO WORK WITH GIMP THROUGH THIS SERVER
 4. Edit, then MEASURE: gimp_measure(kind="bbox"|"color"|"histogram"|"dominant") answers questions a render cannot.
 5. Before a risky edit, gimp_snapshot(image_id); afterwards gimp_render_compare(image_id, snapshot_id) shows
    before | after | diff.
-6. Prefer a recipe when one exists (gimp_list_recipes): stickers, icon sets, web optimisation, watermark,
-   contact sheet, sprite slicing, compose-from-manifest. gimp_batch_recipe runs one over a folder.
+6. Heavy work belongs in a recipe or one gimp_run_python call: they report progress and gimp_cancel stops them.
+   Prefer a recipe when one exists (gimp_list_recipes): stickers, icon sets, web optimisation, watermark,
+   contact sheet, sprite slicing, social crops, compose-from-manifest. gimp_batch_recipe runs one over a folder.
 7. Common edits: gimp_adjust, gimp_canvas and gimp_draw choose and describe the installed runtime operation.
    Filters: gimp_filter_search -> gimp_filter_describe -> gimp_apply_filter. Anything else: gimp_pdb_search ->
    gimp_pdb_describe -> gimp_pdb_call. gimp_run_python for multi-step logic.
@@ -173,6 +174,9 @@ contact_sheet       input_dir, output_path, columns, thumb, labels
 sprite_sheet_pack   input_paths (ordered PNGs), output_path (.png), columns, margin, spacing; verified PNG + layered XCF + atlas JSON
 sprite_atlas_pack   input_paths (mixed-size PNGs) or input_layer_ids (open layers), output_path (.png), padding, trim, max_width, power_of_two; verified atlas
 sprite_sheet_slice  input_path, output_dir, tile_width, tile_height, margin, spacing
+social_crop         input_path or image_id, output_dir, profiles (open_graph, x_landscape, instagram_square,
+                    instagram_portrait, story_reel, youtube_thumbnail, all, or {name,width,height}), focus {x,y},
+                    fit cover|crop, allow_upscale, format; reopens each file and checks size and pixels
 fit_and_export      input_path, output_path, max_edge
 compose             manifest (dict) or manifest_path, output_path: build a card/banner from components (see compose)
 """
@@ -199,6 +203,20 @@ color, radius, opacity), ellipse (x, y, width, height, color, opacity). Any item
 {"op": "gegl:...", "params": {...}, "mode": "merge"|"append"}, and "name".
 "anchor": "center" on text or image centres it on x, y. Returns each item's final bounding box so you can check
 alignment with gimp_measure or adjust and re-run. "keep_open": true leaves the layered image in GIMP for hand edits.
+
+BRAND TOKENS
+Store a brand once with gimp_brand(action="set", profile={"name": "example",
+  "colors": {"bg": "#0f1117", "accent": "#1f3a8a", "text": "#ffffff"},
+  "fonts": {"headline": "Bahnschrift Bold"}, "assets": {"logo": "/brand/logo.png"},
+  "canvases": {"x-card": [1200, 675], "og": [1200, 630]}}). Font names are checked against GIMP when saved.
+Then a manifest says {"brand": "example", "canvas": "x-card", "background": "@bg", "items": [
+  {"type": "image", "path": "@logo", ...}, {"type": "text", "font": "@headline", "color": "@text", ...}]}
+(or pass "brand" as a recipe parameter). "@key" resolves against the profile's colors, fonts and assets, which
+share one key space; "canvas" sets width and height. Literals always win: a plain "#hex" or font name is used
+as written, explicit width/height beat canvas, and a manifest "tokens": {"text": "#ff0000"} overrides profile keys
+for that manifest. "text" and "name" fields are never tokens, so "@handle" in a caption stays literal; "@@x"
+gives a literal "@x" elsewhere. An unknown token fails before GIMP runs, naming the profile and its keys.
+gimp_brand(action="list"|"get"|"delete") manages stored profiles.
 """
 
 TOPICS["errors"] = """\
@@ -210,7 +228,12 @@ READING ERRORS
 "no open image with id N"                      -> ids change when images close; call gimp_list_images
 "GIMP Agent Bridge is not reachable"           -> gimp_launch, or Filters > Development > Start Agent Bridge in GIMP
 "segmentation is not installed"                -> uv sync --extra segmentation in the server directory
-Long operations: pass a bigger timeout by splitting work, or use recipes which run inside GIMP in one call.
+"OperationCancelled: ... cancelled at a checkpoint" -> gimp_cancel stopped it; work before the checkpoint is kept
+Long operations: recipes, gimp_batch_recipe, gimp_edit_batch and gimp_run_python report MCP progress and stop
+  at their next checkpoint when gimp_cancel is called (from any client, even while the call runs). Heavy work on
+  a large image belongs in a recipe or one gimp_run_python call with checkpoint(fraction, text) between passes,
+  not many separate tool calls. A single filter merge cannot be interrupted once it starts. Do not retry a slow
+  call that is still reporting progress; call gimp_cancel first if you want it to stop.
 """
 
 

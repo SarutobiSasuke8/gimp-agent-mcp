@@ -12,7 +12,7 @@ def test_help_topics_cover_the_surface():
 
 def test_tool_surface():
     names = sorted(t.name for t in server.mcp._tool_manager.list_tools())
-    assert len(names) == 40, names
+    assert len(names) == 42, names
     assert "gimp_help" in names
     for required in (
         "gimp_measure",
@@ -31,6 +31,8 @@ def test_tool_surface():
         "gimp_canvas",
         "gimp_draw",
         "gimp_undo_group",
+        "gimp_cancel",
+        "gimp_brand",
     ):
         assert required in names
 
@@ -138,6 +140,7 @@ def test_recipe_catalogue():
         "sprite_sheet_slice",
         "sprite_sheet_pack",
         "sprite_atlas_pack",
+        "social_crop",
         "compose",
     }
 
@@ -145,3 +148,67 @@ def test_recipe_catalogue():
 def test_segmentation_availability_is_a_bool():
     assert isinstance(segmentation.available(), bool)
     assert "u2net" in segmentation.MODELS
+
+
+class _FakeShutdownClient:
+    """Stands in for server._client: records the shutdown_and_wait call and returns or raises what it is given."""
+
+    def __init__(self, outcome):
+        self.outcome = outcome
+        self.calls = []
+        self.closed = 0
+
+    def shutdown_and_wait(self, quit_gimp=True, wait_seconds=30.0, poll=0.1):
+        self.calls.append({"quit_gimp": quit_gimp, "wait_seconds": wait_seconds})
+        if isinstance(self.outcome, Exception):
+            raise self.outcome
+        return dict(self.outcome)
+
+    def close(self):
+        self.closed += 1
+
+
+def test_shutdown_waits_and_reports_full_exit(monkeypatch):
+    fake = _FakeShutdownClient({"stopping": True, "quit_gimp": True, "accepting": False, "stopped": True, "waited": 0.4})
+    monkeypatch.setattr(server, "_client", fake)
+    result = server.gimp_shutdown(quit_gimp=True)
+    assert fake.calls == [{"quit_gimp": True, "wait_seconds": 30.0}]
+    assert result["fully_exited"] is True and result["timed_out"] is False and result["waited"] == 0.4
+    assert fake.closed >= 1
+
+
+def test_shutdown_leaves_the_quit_default_to_the_bridge(monkeypatch):
+    fake = _FakeShutdownClient({"stopping": True, "quit_gimp": False, "stopped": True, "waited": 0.2})
+    monkeypatch.setattr(server, "_client", fake)
+    result = server.gimp_shutdown()
+    assert fake.calls[0]["quit_gimp"] is None
+    # A GUI bridge stopped without quitting: the bridge is gone but GIMP is still open.
+    assert result["stopped"] is True and result["fully_exited"] is False
+
+
+def test_shutdown_timeout_is_reported_not_raised(monkeypatch):
+    from gimp_agent_mcp.bridge_client import BridgeError
+
+    fake = _FakeShutdownClient(BridgeError("bridge on port 1 (pid 2) ... still present after 30.0s", "ShutdownTimeout"))
+    monkeypatch.setattr(server, "_client", fake)
+    result = server.gimp_shutdown(quit_gimp=True)
+    assert result["fully_exited"] is False and result["timed_out"] is True and result["stopped"] is False
+    assert "still present" in result["detail"]
+    assert fake.closed >= 1
+
+
+def test_shutdown_with_no_bridge_does_not_claim_gimp_exited(monkeypatch):
+    fake = _FakeShutdownClient({"stopped": True, "already_stopped": True, "waited": 0.0})
+    monkeypatch.setattr(server, "_client", fake)
+    result = server.gimp_shutdown(quit_gimp=True)
+    assert result["already_stopped"] is True and result["fully_exited"] is None
+
+
+def test_shutdown_other_bridge_errors_become_tool_errors(monkeypatch):
+    import pytest
+
+    from gimp_agent_mcp.bridge_client import BridgeError
+
+    monkeypatch.setattr(server, "_client", _FakeShutdownClient(BridgeError("boom", "BridgeError")))
+    with pytest.raises(server.ToolError, match="boom"):
+        server.gimp_shutdown(quit_gimp=True)

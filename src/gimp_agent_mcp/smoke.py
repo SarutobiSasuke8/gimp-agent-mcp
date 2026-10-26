@@ -363,6 +363,32 @@ def run_smoke(mode: str = "headless", keep: bool = False, verbose: bool = True, 
 
     check("recipe compose (manifest)", _recipe_compose)
 
+    def _recipe_social_crop():
+        profiles = [{"name": "wide", "width": 150, "height": 50}, {"name": "tall", "width": 40, "height": 90}]
+        out = client.call("exec", {"code": _recipe_code("social_crop", {
+            "input_path": png_path, "output_dir": str(tmpdir / "social"), "profiles": profiles,
+            "focus": {"x": 120, "y": 30},
+        })}, timeout=300)
+        res = out["result"]
+        for o, p in zip(res["outputs"], profiles, strict=True):
+            assert o["measured"] == {"width": p["width"], "height": p["height"]}, o
+            assert o["pixel_check"] == "exact RGBA match", o
+            assert 0 <= o["focus_after"]["x"] < p["width"] and 0 <= o["focus_after"]["y"] < p["height"], o
+            with open(o["path"], "rb") as fh:
+                assert _png_size(fh.read()) == (p["width"], p["height"])
+        try:
+            client.call("exec", {"code": _recipe_code("social_crop", {
+                "input_path": png_path, "output_dir": str(tmpdir / "social-refused"), "fit": "crop",
+                "profiles": [{"name": "huge", "width": 400, "height": 50}]})}, timeout=300)
+        except BridgeError as exc:
+            assert "does not fit" in str(exc), exc
+        else:
+            raise AssertionError("a profile larger than the source was not refused with fit='crop'")
+        assert not (tmpdir / "social-refused").exists()
+        return [o["profile"] for o in res["outputs"]]
+
+    check("recipe social_crop (measured profiles)", _recipe_social_crop)
+
     def _help():
         from . import help as helpdoc
 
@@ -402,7 +428,19 @@ def run_smoke(mode: str = "headless", keep: bool = False, verbose: bool = True, 
         check("close_image", lambda: client.call("close_image", {"image_id": image_id}))
 
     if started_here and not keep:
-        check("shutdown", lambda: client.call("shutdown", {"quit_gimp": True}, timeout=10))
+        def _shutdown():
+            # Regression check for the macOS arm64 live-smoke failures of 15 Oct 2026: shutdown used to return
+            # while the old bridge still answered, so the next proof step attached to a GIMP that then quit
+            # under it. Shutdown must leave nothing a fresh client can reach.
+            done = client.shutdown_and_wait(quit_gimp=True)
+            probe = BridgeClient()
+            try:
+                assert probe.ping() is None, "a fresh client still reached the bridge after shutdown returned"
+            finally:
+                probe.close()
+            return done
+
+        check("shutdown (bridge gone before return)", _shutdown)
     client.close()
 
     log(f"artifacts: {tmpdir}")

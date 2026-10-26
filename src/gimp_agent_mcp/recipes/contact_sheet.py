@@ -16,6 +16,7 @@ PARAMS = {
 
 SOURCE = r'''
 import os, math
+checkpoint_ = globals().get("checkpoint") or (lambda *a, **k: None)
 
 in_dir = os.path.abspath(os.path.expanduser(params["input_dir"]))
 dst = os.path.abspath(os.path.expanduser(params["output_path"]))
@@ -40,6 +41,7 @@ Gimp.context_pop()
 placed = []
 try:
     for idx, name in enumerate(files):
+        checkpoint_(idx / len(files), f"thumbnail {idx + 1} of {len(files)}: {name}")
         r, c = divmod(idx, cols)
         cx = gap + c * (thumb + gap)
         cy = gap + r * (thumb + label_h + gap)

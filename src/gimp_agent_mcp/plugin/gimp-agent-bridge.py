@@ -381,6 +381,10 @@ class Bridge:
         self.loop = GLib.MainLoop()
         self.server_sock = None
         self.stopping = False
+        # Set by op_shutdown: from then on this bridge refuses new connections and new work, so a client
+        # that arrives during the shutdown grace period cannot attach to a GIMP that is about to quit.
+        self.shutting_down = False
+        self.bridge_file = None
         Gegl.init(None)
         self.pdb = Gimp.get_pdb()
         self._proc_names = None
@@ -402,6 +406,12 @@ class Bridge:
         self.ns["item_by_id"] = _get_item
         self.ns["make_color"] = _make_color
         self.ns["export_with"] = _export_with
+        # One operation runs at a time on the main thread. Long paths call checkpoint() between steps, which
+        # reports progress and answers cancel/jobs requests without running the GLib loop re-entrantly.
+        self.clients = {}
+        self.jobs = core.JobTracker(poll=self._poll_control)
+        self.ns["checkpoint"] = self.jobs.checkpoint
+        self.ns["OperationCancelled"] = core.OperationCancelled
 
     # -- lifecycle -----------------------------------------------------------------
 
@@ -467,26 +477,80 @@ class Bridge:
         self.clients[id(conn)] = conn
         return True
 
-    def _handle_request(self, request, connection=None):
+    def _handle_request(self, request, conn=None):
         req_id = request.get("id")
         if request.get("token") != self.token:
             return {"id": req_id, "ok": False, "error": {"type": "Unauthorized", "message": "bad or missing token"}}
         op = request.get("op")
         params = request.get("params") or {}
+        if self.shutting_down:
+            return {"id": req_id, "ok": False, "error": {"type": core.STOPPING_ERROR, "message": core.STOPPING_MESSAGE}}
         if not isinstance(op, str) or not hasattr(self, "op_" + op):
             return {"id": req_id, "ok": False, "error": {"type": "UnknownOp", "message": f"unknown op {op!r}"}}
-        self._request_owner = id(connection) if connection is not None else None
+        job = None
+        if op not in core.CONTROL_OPS:
+            send_progress = None
+            if request.get("progress") and conn is not None:
+                # Only clients that ask for progress get interim lines, so older clients see one reply per request.
+                def send_progress(progress, _conn=conn, _id=req_id):
+                    _conn._send({"id": _id, "progress": progress})
+            image_id = params.get("image_id") if isinstance(params, dict) else None
+            job = self.jobs.start(req_id, op, image_id=image_id, send_progress=send_progress)
+        previous_owner = self._request_owner
+        self._request_owner = id(conn) if conn is not None else None
         try:
             result = {"ok": True, "result": getattr(self, "op_" + op)(params)}
+        except core.OperationCancelled as exc:
+            result = {"ok": False, "error": {"type": "OperationCancelled", "message": str(exc)}}
         except Exception as exc:
             result = {
                 "ok": False,
                 "error": {"type": type(exc).__name__, "message": str(exc), "traceback": traceback.format_exc()},
             }
         finally:
-            self._request_owner = None
+            self._request_owner = previous_owner
+            if job is not None:
+                self.jobs.finish(job)
+                # Requests that arrived while this one ran may already sit in a buffer, read by a checkpoint.
+                # GLib will not report them again, so drain them once the loop is idle.
+                GLib.idle_add(self._drain_buffers)
         result["id"] = req_id
         return result
+
+    def _poll_control(self):
+        """Called from checkpoints: read waiting bytes from every client and answer cancel/jobs immediately."""
+        # gimp_cancel arrives on a fresh connection, which the busy main loop has not accepted yet.
+        while self.server_sock is not None and not self.stopping:
+            try:
+                client, _addr = self.server_sock.accept()
+            except (BlockingIOError, InterruptedError, OSError):
+                break
+            client.setblocking(False)
+            conn = ClientConnection(self, client)
+            self.clients[id(conn)] = conn
+        for conn in list(self.clients.values()):
+            conn.read_available()
+            remaining, controls = core.split_control_requests(conn.buffer, self.token)
+            conn.buffer = remaining
+            for request in controls:
+                response = self._handle_request(request, conn)
+                with contextlib.suppress(OSError):
+                    conn._send(response)
+
+    def _drain_buffers(self):
+        for conn in list(self.clients.values()):
+            if self.jobs.current is not None:
+                break
+            if b"\n" in conn.buffer or conn.eof:
+                conn.process_buffer()
+        return False
+
+    def op_cancel(self, params):
+        """Ask the running operation to stop at its next checkpoint. Answered even while that operation runs."""
+        return self.jobs.cancel(image_id=params.get("image_id"), request_id=params.get("request_id"))
+
+    def op_jobs(self, params):
+        return self.jobs.status()
 
     # -- helpers -------------------------------------------------------------------
 
@@ -598,6 +662,7 @@ class Bridge:
         try:
             for index, step in enumerate(steps):
                 try:
+                    self.jobs.checkpoint(index / len(steps), f"step {index + 1} of {len(steps)}: {step['op']}")
                     args = core.resolve_edit_refs(step["params"], results)
                     if args.get("image_id") is not None and int(args["image_id"]) != image.get_id():
                         raise BridgeError("batch edits must target the batch image")
@@ -613,8 +678,10 @@ class Bridge:
         finally:
             self._undo_end(image)
             self._flush()
+        self.jobs.checkpoint(1.0, "batch finished", cancellable=False)
         return {"complete": error is None, "image_id": image.get_id(), "completed_steps": len(results),
                 "results": results, "error": error, "undo_group_closed": True,
+                "cancelled": bool(error and error["type"] == "OperationCancelled"),
                 "recovery": "One Ctrl+Z in GIMP reverts the batch, including any partial failing step. No automatic rollback."}
 
     def op_ping(self, params):
@@ -633,8 +700,25 @@ class Bridge:
 
     def op_shutdown(self, params):
         quit_gimp = bool(params.get("quit_gimp", self.mode == "headless"))
+        # Stop being discoverable now, not when the timer below fires. Before this, a client that started
+        # inside the grace period (the next CI step, typically) still found the bridge file, connected,
+        # got answers for a few calls and then lost its socket when GIMP quit under it.
+        self._stop_accepting()
         GLib.timeout_add(150, self._do_shutdown, quit_gimp)
-        return {"stopping": True, "quit_gimp": quit_gimp}
+        return {"stopping": True, "quit_gimp": quit_gimp, "accepting": False}
+
+    def _stop_accepting(self):
+        self.shutting_down = True
+        watch = getattr(self, "_server_watch", None)
+        if watch:
+            with contextlib.suppress(Exception):
+                GLib.source_remove(watch)
+            self._server_watch = None
+        if self.server_sock is not None:
+            with contextlib.suppress(OSError):
+                self.server_sock.close()
+            self.server_sock = None
+        _remove_own_bridge_file(self.bridge_file)
 
     def _do_shutdown(self, quit_gimp):
         self.close()
@@ -657,6 +741,7 @@ class Bridge:
         image = _get_image(params["image_id"]) if params.get("image_id") is not None else None
         out, err = io.StringIO(), io.StringIO()
         result = None
+        before = {img.get_id() for img in Gimp.get_images()}
         if image is not None:
             self._undo_start(image)
         try:
@@ -668,6 +753,15 @@ class Bridge:
                     result = self.ns.get("result")
                 else:
                     result = eval(compiled, self.ns)
+        except core.OperationCancelled:
+            # Leave GIMP as it was before the call: images this code created and never showed are removed.
+            # Edits to an image passed as image_id stay inside its single undo group (closed below).
+            for img in Gimp.get_images():
+                img_id = img.get_id()
+                if img_id not in before and img_id not in self.snapshots and img_id not in self.displays:
+                    with contextlib.suppress(Exception):
+                        img.delete()
+            raise
         finally:
             if image is not None:
                 self._undo_end(image)
@@ -1050,6 +1144,8 @@ class Bridge:
         props = params.get("params") or {}
         if not isinstance(props, dict):
             raise BridgeError("params must be an object of GEGL property values")
+        # Last point where a cancel can land before pixels change. A single merge_filter cannot be interrupted.
+        self.jobs.checkpoint(0.0, f"{op}: starting {mode}")
         image = item.get_image()
         self._undo_start(image)
         try:
@@ -1087,6 +1183,7 @@ class Bridge:
         finally:
             self._undo_end(image)
             self._flush()
+        self.jobs.checkpoint(1.0, f"{op} {mode} finished", cancellable=False)
         return {"applied": op, "mode": mode, "layer": _item_info(item)}
 
     def op_list_filters_on_layer(self, params):
@@ -1698,6 +1795,7 @@ class ClientConnection:
         self.bridge = bridge
         self.sock = sock
         self.buffer = b""
+        self.eof = False
         self.channel = bridge._channel_for(sock)
         self.watch = GLib.io_add_watch(
             self.channel,
@@ -1750,6 +1848,30 @@ class ClientConnection:
             self.close()
             return False
         self.buffer += data
+        return self.process_buffer()
+
+    def read_available(self):
+        """Non-blocking read of whatever is waiting, used by checkpoints while the main loop is busy.
+
+        End of stream is only noted here; the connection is closed once the running operation has finished,
+        so a checkpoint never tears down the socket its own reply is about to use."""
+        if self.watch is None or self.eof:
+            return
+        while True:
+            try:
+                data = self.sock.recv(1 << 16)
+            except (BlockingIOError, InterruptedError):
+                return
+            except OSError:
+                self.eof = True
+                return
+            if not data:
+                self.eof = True
+                return
+            self.buffer += data
+
+    def process_buffer(self):
+        """Run every complete request line in the buffer. Returns False once the connection is closed."""
         while b"\n" in self.buffer:
             line, self.buffer = self.buffer.split(b"\n", 1)
             if not line.strip():
@@ -1769,6 +1891,9 @@ class ClientConnection:
             if request.get("op") == "shutdown" and response.get("ok"):
                 self.close()
                 return False
+        if self.eof:
+            self.close()
+            return False
         return True
 
 
@@ -1815,6 +1940,7 @@ def _run_bridge(procedure, config):
 
     port = bridge.port  # may differ from the request if another bridge holds the port
     core.write_bridge_file(path, port=port, token=token, pid=os.getpid(), gimp_version=Gimp.version(), mode=mode)
+    bridge.bridge_file = path
     if mode == "gui":
         Gimp.message(f"GIMP Agent Bridge listening on {core.DEFAULT_HOST}:{port}. Agents will use this window.")
     print(f"[gimp-agent-bridge] listening on {core.DEFAULT_HOST}:{port} ({mode})", file=sys.stderr)
@@ -1823,12 +1949,18 @@ def _run_bridge(procedure, config):
         bridge.loop.run()
     finally:
         bridge.close()
-        # Only remove the bridge file if it still describes this bridge; a newer one may have replaced it.
-        current = core.read_bridge_file(path)
-        if current and int(current.get("pid", -1)) == os.getpid():
-            with contextlib.suppress(OSError):
-                os.remove(path)
+        _remove_own_bridge_file(path)
     return procedure.new_return_values(Gimp.PDBStatusType.SUCCESS, GLib.Error())
+
+
+def _remove_own_bridge_file(path):
+    """Only remove the bridge file if it still describes this bridge; a newer one may have replaced it."""
+    if not path:
+        return
+    current = core.read_bridge_file(path)
+    if current and int(current.get("pid", -1)) == os.getpid():
+        with contextlib.suppress(OSError):
+            os.remove(path)
 
 
 class GimpAgentBridgePlugIn(Gimp.PlugIn):

@@ -6,12 +6,14 @@ PARAMS = {
     "output_path": {"type": "string", "required": True, "description": "Destination image; extension picks the format"},
     "manifest": {"type": "object", "default": None, "description": "Layout manifest (see gimp_help('compose')); or use manifest_path"},
     "manifest_path": {"type": "string", "default": "", "description": "Path to a JSON manifest file instead of inline manifest"},
+    "brand": {"type": "string", "default": "", "description": "Brand profile (gimp_brand) whose @tokens and canvases the manifest may use; a manifest 'brand' key wins"},
     "export_options": {"type": "object", "default": {}, "description": "Options for the export procedure, e.g. {\"quality\": 85}"},
     "keep_open": {"type": "boolean", "default": False, "description": "Leave the layered image open in GIMP for hand edits"},
 }
 
 SOURCE = r'''
 import os, json
+checkpoint_ = globals().get("checkpoint") or (lambda *a, **k: None)
 
 manifest = params.get("manifest")
 if not manifest and params.get("manifest_path"):
@@ -72,6 +74,7 @@ if bg and str(bg).lower() not in ("transparent", "none"):
     Gimp.Selection.all(image); solid(base, bg); Gimp.Selection.none(image)
 
 for idx, item in enumerate(manifest.get("items") or []):
+    checkpoint_(idx / max(1, len(manifest.get("items") or [])), f"item {idx + 1}: {item.get('type')}")
     kind = str(item.get("type") or "").lower()
     name = item.get("name") or f"{kind}-{idx}"
     x, y = int(item.get("x", 0)), int(item.get("y", 0))
