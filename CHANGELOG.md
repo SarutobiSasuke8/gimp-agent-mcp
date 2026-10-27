@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
+- `gimp_undo_group` can hold one image's edits across agent calls and closes held groups on client disconnect. `gimp_status` lists open groups. GIMP's public undo API cannot set a custom Undo History label, so the supplied name is bridge metadata only.
 - `social_crop` recipe (#9): exports one source (file or open image) to named social profiles (Open Graph, X landscape, Instagram square and portrait, story/reel, YouTube thumbnail, or custom sizes) around a focus point. `fit="cover"` scales to cover then crops, refusing to enlarge unless `allow_upscale=true`; `fit="crop"` never scales. Every profile is planned first, then each file is reopened and its measured size checked, and PNG output must match the cropped pixels exactly. The planner is shared with unit tests that check the focus stays in frame.
 - Recipes may define `VALIDATE(params)` for cross-parameter checks that need no GIMP. `sprite_atlas_pack` uses it, so passing both or neither of `input_paths` and `input_layer_ids` now fails before GIMP runs.
 - `docs/WARP_INVESTIGATION.md`: what GIMP 3.2.4 exposes for warp and liquify (`gegl:warp` cannot be created as a drawable filter; `plug-in-warp` is a displacement-map effect) and what a supported workflow would need. Warp stays unsupported.

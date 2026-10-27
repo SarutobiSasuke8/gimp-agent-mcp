@@ -8,7 +8,7 @@ import os
 import re
 import threading
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import anyio.from_thread
 from mcp.server.mcpserver import Context, Image, MCPServer
@@ -38,6 +38,8 @@ Working model:
   Arguments are passed by name; images and items are passed as their ids; colours as "#rrggbb", "white" or
   "rgb(255,0,0)"; enums by nick such as "clip-to-image". run-mode defaults to noninteractive.
 - gimp_edit_batch groups supported edits into one Ctrl+Z step. Inspect complete/error; failures preserve partial work.
+- gimp_undo_group holds one image's edits across calls. Start it before the turn, end it in a finally step,
+  and check gimp_status for abandoned groups. A lost connection closes the group automatically.
 - gimp_context reports selected layers for an explicit image, never guesses the focused document.
 - gimp_run_python executes Python inside GIMP with Gimp, Gegl, Gio available and a persistent namespace.
   Prefer it for multi-step work; the expression value or a variable named `result` comes back.
@@ -185,6 +187,12 @@ def gimp_context(image_id: int | None = None, selected_layer_ids: list[int] | No
 def gimp_edit_batch(image_id: int, steps: list[dict[str, Any]], ctx: Context | None = None) -> dict[str, Any]:
     """Run 1..100 edits on one image in ONE undo group. steps=[{op:'layer'|'text'|'select'|'path'|'layer_mask'|'apply_filter', params:{...}}]. Params use the corresponding tool arguments; image_id is injected. Reference an earlier result with {'$ref':'0.id'}. Check complete/error: failure stops later steps, preserves partial work, and always closes the undo group. One Ctrl+Z in GIMP reverts it; this is not automatic rollback or programmatic undo. No edits by another bridge request interleave within the batch. Reports progress per step; gimp_cancel stops it before the next step (cancelled=true)."""
     return _call("edit_batch", {"image_id": image_id, "steps": steps}, progress=_progress_reporter(ctx))
+
+
+@mcp.tool()
+def gimp_undo_group(image_id: int, action: Literal["start", "end"], name: str | None = None) -> dict[str, Any]:
+    """Hold one image's edits across tool calls as one GIMP undo step. Start with a short name, then always end it. A lost bridge connection closes the group; gimp_status lists open groups. GIMP's public API does not show the custom name in Undo History."""
+    return _call("undo_group", {"image_id": image_id, "action": action, "name": name})
 
 
 # --------------------------------------------------------------------------- images
