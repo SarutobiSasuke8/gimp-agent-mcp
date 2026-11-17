@@ -338,6 +338,6 @@ def test_progress_reporter_scales_and_never_goes_backwards(monkeypatch):
 
 def test_context_parameter_is_not_part_of_tool_schemas():
     tools = {t.name: t for t in server.mcp._tool_manager.list_tools()}
-    for name in ("gimp_run_recipe", "gimp_batch_recipe", "gimp_edit_batch", "gimp_apply_filter", "gimp_run_python"):
+    for name in ("gimp_run_recipe", "gimp_batch_recipe", "gimp_edit_batch", "gimp_apply_filter"):
         assert "ctx" not in tools[name].parameters.get("properties", {}), name
     assert "gimp_cancel" in tools

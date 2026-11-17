@@ -19,12 +19,13 @@ HOW TO WORK WITH GIMP THROUGH THIS SERVER
 4. Edit, then MEASURE: gimp_measure(kind="bbox"|"color"|"histogram"|"dominant") answers questions a render cannot.
 5. Before a risky edit, gimp_snapshot(image_id); afterwards gimp_render_compare(image_id, snapshot_id) shows
    before | after | diff.
-6. Heavy work belongs in a recipe or one gimp_run_python call: they report progress and gimp_cancel stops them.
+6. Recipes report progress and support gimp_cancel. For trusted Python scripts, start the MCP server with
+   GIMP_AGENT_ALLOW_PYTHON=1 to enable gimp_run_python.
    Prefer a recipe when one exists (gimp_list_recipes): stickers, icon sets, web optimisation, watermark,
    contact sheet, sprite slicing, social crops, compose-from-manifest. gimp_batch_recipe runs one over a folder.
 7. Common edits: gimp_adjust, gimp_canvas and gimp_draw choose and describe the installed runtime operation.
    Filters: gimp_filter_search -> gimp_filter_describe -> gimp_apply_filter. Anything else: gimp_pdb_search ->
-   gimp_pdb_describe -> gimp_pdb_call. gimp_run_python for multi-step logic.
+   gimp_pdb_describe -> gimp_pdb_call. Use a recipe for repeatable multi-step work.
 8. Export with gimp_export(image_id, path, options). Extension picks the format. Save working files as .xcf.
 9. Errors tell you what is valid: unknown argument -> valid list; unknown enum -> choices; refused op -> alternative.
 

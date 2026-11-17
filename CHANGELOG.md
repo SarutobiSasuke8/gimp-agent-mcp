@@ -22,6 +22,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
+- `gimp_run_python` is disabled by default. Existing clients that use it must start the MCP server with `GIMP_AGENT_ALLOW_PYTHON=1`.
+
 - `scripts/capability_proof.py` stops at the first lost bridge and reports which check GIMP died in, instead of failing every later check with "no bridge token found". The 2026-09-08 macOS arm64 failure on `main` was GIMP exiting during the gradient-fill check; the same commit passed on re-run.
 
 ### Fixed

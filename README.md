@@ -93,7 +93,7 @@ Claude Code can also install the server and skills as a plugin; see [skills inst
 
 Other GIMP MCP projects also provide TCP bridges and visual feedback. This project's emphasis is editable output, measurement, grouped edits and reproducible validation. Generic API access is broad, but does not guarantee that every GIMP procedure or GEGL operation works with every argument combination.
 
-## Tools (40)
+## Tools
 
 | Area | Tools |
 |---|---|
@@ -107,7 +107,7 @@ Other GIMP MCP projects also provide TCP bridges and visual feedback. This proje
 | Cut out | `gimp_remove_background` (optional rembg model runtime) |
 | Automate | `gimp_run_python`, `gimp_list_recipes`, `gimp_run_recipe`, `gimp_batch_recipe`, `gimp_brand`, `gimp_cancel` |
 
-Images and items use integer IDs. Colours accept hex, common names, CSS RGB strings or component arrays; enums use nicks returned by the describe tools. Call `gimp_help("batch")` for grouped-edit examples. `gimp_run_python` may be disabled, reducing the tool count by one.
+Images and items use integer IDs. Colours accept hex, common names, CSS RGB strings or component arrays; enums use nicks returned by the describe tools. Call `gimp_help("batch")` for grouped-edit examples. The server exposes 41 tools by default. Set `GIMP_AGENT_ALLOW_PYTHON=1` in the MCP server environment to enable `gimp_run_python` as the 42nd tool.
 
 Common work no longer needs procedure discovery. For example, use `gimp_adjust(layer_id, "brightness_contrast", {"brightness": 0.15})`, `gimp_canvas(image_id, "crop", width=1200, height=630, x=40, y=20)`, or `gimp_draw(image_id, layer_id, "line", color="#ffffff", x=20, y=40, x2=300, y2=40, line_width=6)`. Adjustments default to editable layer effects where GIMP supports them; canvas and drawing actions bake pixels or structure. Every result identifies the runtime operation selected before execution.
 

@@ -10,7 +10,7 @@ Do not expose this server to clients you would not let run a script on your mach
 
 - The bridge binds to `127.0.0.1` only. There is no option to bind elsewhere.
 - Every request must carry the token from `<GIMP config dir>/agent-bridge.json`. The file is created with mode `0600` on POSIX and lives in the user's private profile directory on Windows. Requests without the token are rejected before dispatch.
-- `GIMP_AGENT_ALLOW_PYTHON=0` removes the `gimp_run_python` tool from the server. Note that `gimp_pdb_call` can still reach `python-fu-eval` and recipes are Python by design, so this is a guard against casual use, not a sandbox.
+- `gimp_run_python` is disabled by default. Set `GIMP_AGENT_ALLOW_PYTHON=1` in the MCP server environment to opt in. Note that `gimp_pdb_call` can still reach `python-fu-eval` and recipes are Python by design, so this is a guard against casual use, not a sandbox.
 - The bridge serves one client at a time and runs every operation on the plug-in main thread; a stuck operation blocks the bridge but not GIMP's UI.
 - Errors returned to the client include a traceback tail for debugging. They do not include the token.
 

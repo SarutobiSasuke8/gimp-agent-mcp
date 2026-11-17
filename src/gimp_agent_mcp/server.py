@@ -21,7 +21,7 @@ except ImportError:  # pragma: no cover
 from . import brands, recipes
 from .bridge_client import BridgeClient, BridgeError, BridgeUnavailable, launch_gimp
 
-ALLOW_PYTHON = os.environ.get("GIMP_AGENT_ALLOW_PYTHON", "1").strip().lower() not in ("0", "false", "no", "off")
+ALLOW_PYTHON = os.environ.get("GIMP_AGENT_ALLOW_PYTHON", "0").strip() == "1"
 
 INSTRUCTIONS = """\
 You are driving a live GIMP 3 instance through gimp-agent-mcp.
@@ -41,8 +41,8 @@ Working model:
 - gimp_undo_group holds one image's edits across calls. Start it before the turn, end it in a finally step,
   and check gimp_status for abandoned groups. A lost connection closes the group automatically.
 - gimp_context reports selected layers for an explicit image, never guesses the focused document.
-- gimp_run_python executes Python inside GIMP with Gimp, Gegl, Gio available and a persistent namespace.
-  Prefer it for multi-step work; the expression value or a variable named `result` comes back.
+- gimp_run_python is available when the MCP server starts with GIMP_AGENT_ALLOW_PYTHON=1. It runs Python
+  inside GIMP with Gimp, Gegl and Gio available and returns the expression value or a variable named `result`.
 - Recipes are tested multi-step jobs (gimp_list_recipes). Prefer a recipe over re-deriving the steps.
 - Exports go through gimp_export; the extension selects the format. Save working files as .xcf.
 - If nothing responds, gimp_status tells you whether GIMP is running; gimp_launch starts it.
