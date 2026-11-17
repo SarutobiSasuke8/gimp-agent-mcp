@@ -1,3 +1,9 @@
+import os
+import subprocess
+import sys
+
+import pytest
+
 from gimp_agent_mcp import recipes, segmentation, server
 
 
@@ -12,7 +18,7 @@ def test_help_topics_cover_the_surface():
 
 def test_tool_surface():
     names = sorted(t.name for t in server.mcp._tool_manager.list_tools())
-    assert len(names) == 42, names
+    assert len(names) == 41 + int(server.ALLOW_PYTHON), names
     assert "gimp_help" in names
     for required in (
         "gimp_measure",
@@ -212,3 +218,24 @@ def test_shutdown_other_bridge_errors_become_tool_errors(monkeypatch):
     monkeypatch.setattr(server, "_client", _FakeShutdownClient(BridgeError("boom", "BridgeError")))
     with pytest.raises(server.ToolError, match="boom"):
         server.gimp_shutdown(quit_gimp=True)
+
+
+@pytest.mark.parametrize(("value", "enabled"), [(None, False), ("0", False), ("1", True)])
+def test_python_tool_registration(value, enabled):
+    env = os.environ.copy()
+    if value is None:
+        env.pop("GIMP_AGENT_ALLOW_PYTHON", None)
+    else:
+        env["GIMP_AGENT_ALLOW_PYTHON"] = value
+    check = """
+from gimp_agent_mcp.server import mcp
+tools = {t.name: t for t in mcp._tool_manager.list_tools()}
+tool = tools.get("gimp_run_python")
+if tool:
+    assert "ctx" not in tool.parameters.get("properties", {})
+print(tool is not None)
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", check], env=env, capture_output=True, text=True, check=True
+    )
+    assert result.stdout.strip() == str(enabled)

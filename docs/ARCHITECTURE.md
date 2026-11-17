@@ -11,6 +11,8 @@
 
 The server never links to GIMP. It only speaks the bridge protocol, so it runs on whatever Python the MCP client uses. The plug-in runs on GIMP's bundled Python (3.14 in GIMP 3.2) with PyGObject, and is the only place libgimp, GEGL and the PDB are touched.
 
+The MCP server registers `gimp_run_python` only when started with `GIMP_AGENT_ALLOW_PYTHON=1`.
+
 ## Bridge protocol
 
 One JSON object per line, UTF-8, both directions.
